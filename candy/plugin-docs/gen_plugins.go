@@ -61,8 +61,16 @@ func collectPlugins(root string, entities []entity, compiled map[string]bool) ([
 			continue
 		}
 		pe := pluginEntity{entity: e, CompiledIn: compiled[e.Name]}
-		schemaDir := filepath.Join(root, e.Dir, "schema")
-		if e.Namespace != "" {
+		// The schema dir lives beside the entity's charly.yml. For a REMOTE entity (the candy
+		// de-submodule cutover Phase 3) that is the FETCHED repo tree (SourceRoot), not the local
+		// project root — after Phase 4 the in-repo candy dirs are gone and schema/ lives only in
+		// the standalone repos.
+		schemaBase := root
+		if e.SourceRoot != "" {
+			schemaBase = e.SourceRoot
+		}
+		schemaDir := filepath.Join(schemaBase, e.Dir, "schema")
+		if e.Namespace != "" && e.SourceRoot == "" {
 			schemaDir = filepath.Join(root, "box", e.Namespace, e.Dir, "schema")
 		}
 		ents, err := os.ReadDir(schemaDir)
