@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/opencharly/sdk/candywalk"
+	"github.com/opencharly/spec/refs"
 	"gopkg.in/yaml.v3"
 )
 
@@ -24,12 +25,13 @@ const unifiedFileName = candywalk.UnifiedFileName
 // surface would silently omit the entire Debian and Ubuntu families. So this walks each repo as
 // its own root and unions the results — the defined set, never the default-active one.
 type entity struct {
-	Name      string // entity name as authored (the top-level charly.yml key)
-	Namespace string // "" for the superproject, else the box/<distro> submodule name
-	Dir       string // directory holding this entity's charly.yml, relative to the repo root
-	IsBox     bool   // a candy: node carrying base:/from: is an IMAGE; otherwise a layer
-	Candy     *candyView
-	Box       *boxView
+	Name       string // entity name as authored (the top-level charly.yml key)
+	Namespace  string // "" for the superproject, else the box/<distro> submodule name
+	Dir        string // directory holding this entity's charly.yml, relative to the repo root
+	SourceRoot string // absolute repo root ("" = the local project root; else a fetched remote repo dir)
+	IsBox      bool   // a candy: node carrying base:/from: is an IMAGE; otherwise a layer
+	Candy      *candyView
+	Box        *boxView
 }
 
 // PathSegment is the entity's stable page path — namespaced by DIRECTORY so a submodule box
@@ -99,15 +101,39 @@ func repoRoots(root string) ([]repoRoot, error) {
 // collectEntities reads every DEFINED candy and box across every repo root, via the shared
 // sdk/candywalk kit, and projects the `candy:` kind nodes onto this generator's entity/candyView/
 // boxView (routing base:/from: exactly as the loader does).
-func collectEntities(roots []repoRoot) ([]entity, error) {
+//
+// REMOTE-REF-AWARE (the candy de-submodule cutover Phase 3): the walk is CollectEntitiesRemote,
+// so every @github.com/opencharly/... ref in the walked files' require:/candy: lists is resolved
+// through spec/refs.DownloadRepo (the standalone fetch the out-of-process generator can reach —
+// same cache the runtime uses) and the fetched repo's own candies are unioned in, transitively.
+// After Phase 4 deletes the in-repo candy/ dirs this is what keeps every moved candy's page
+// emitting. Entity.SourceRoot carries the fetched repo dir so schema reads (collectPlugins)
+// resolve against the fetched tree.
+
+// walkRemote is the ONE remote-aware candywalk walk (CollectEntitiesRemote with the standalone
+// fetch) shared by the candy projection (collectEntities) and the candy-skill projection
+// (collectCandySkills) — R3, no duplicate walk.
+func walkRemote(roots []repoRoot) ([]candywalk.Entity, error) {
 	cr := make([]candywalk.Root, 0, len(roots))
 	for _, r := range roots {
 		cr = append(cr, candywalk.Root{Namespace: r.Namespace, Dir: r.Dir})
 	}
-	ents, err := candywalk.CollectEntities(cr)
+	return candywalk.CollectEntitiesRemote(cr, refs.DownloadRepo)
+}
+
+func collectEntities(roots []repoRoot) ([]entity, error) {
+	ents, err := walkRemote(roots)
 	if err != nil {
 		return nil, err
 	}
+	return collectEntitiesFrom(ents)
+}
+
+// collectEntitiesFrom projects an ALREADY-walked entity set onto this generator's entity/
+// candyView/boxView — the R3 single-walk shape: generate() walks ONCE (walkRemote) and feeds
+// both the candy projection (here) and the candy-skill projection (collectCandySkills) from
+// the same slice, never re-walking.
+func collectEntitiesFrom(ents []candywalk.Entity) ([]entity, error) {
 	var out []entity
 	for _, e := range ents {
 		if e.Kind != "candy" {
@@ -121,7 +147,7 @@ func collectEntities(roots []repoRoot) ([]entity, error) {
 		if err := e.Value.Decode(&router); err != nil {
 			continue
 		}
-		ent := entity{Name: e.Name, Namespace: e.Namespace, Dir: e.Dir}
+		ent := entity{Name: e.Name, Namespace: e.Namespace, Dir: e.Dir, SourceRoot: e.SourceRoot}
 		if router.Base != "" || router.From != "" {
 			var b boxView
 			if err := e.Value.Decode(&b); err != nil {

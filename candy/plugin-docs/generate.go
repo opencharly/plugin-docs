@@ -47,7 +47,13 @@ func generate(root, out, pluginsDir string) error {
 	}
 	fmt.Printf("charly docs: walking %d repo root(s): %s\n", len(roots), strings.Join(namespaces, ", "))
 
-	entities, err := collectEntities(roots)
+	// ONE remote-aware walk feeds both projections (R3): the candy/box projection
+	// (collectEntitiesFrom) and the candy-skill projection (collectCandySkills).
+	rawEnts, err := walkRemote(roots)
+	if err != nil {
+		return err
+	}
+	entities, err := collectEntitiesFrom(rawEnts)
 	if err != nil {
 		return err
 	}
@@ -72,6 +78,12 @@ func generate(root, out, pluginsDir string) error {
 	if err != nil {
 		return err
 	}
+	// Phase-3 ref-driven complement: project the candy `skill:` entities from the SAME
+	// remote-aware walk (the marketplace corpus the docs generator also reads is stale until
+	// `charly marketplace generate` regenerates it — without this a moved candy's skill
+	// reference dangles, the R1 divergence the Phase-3 RDD surfaced). The projection mirrors
+	// plugin-marketplace's emit_skills.go.
+	skills = append(skills, collectCandySkills(rawEnts)...)
 	resolver := buildResolver(skills, market)
 
 	// Emit. The skill pass collects unresolvable cross-references rather than failing on the
