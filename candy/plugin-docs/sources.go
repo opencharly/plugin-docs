@@ -109,12 +109,20 @@ func repoRoots(root string) ([]repoRoot, error) {
 // After Phase 4 deletes the in-repo candy/ dirs this is what keeps every moved candy's page
 // emitting. Entity.SourceRoot carries the fetched repo dir so schema reads (collectPlugins)
 // resolve against the fetched tree.
-func collectEntities(roots []repoRoot) ([]entity, error) {
+
+// walkRemote is the ONE remote-aware candywalk walk (CollectEntitiesRemote with the standalone
+// fetch) shared by the candy projection (collectEntities) and the candy-skill projection
+// (collectCandySkills) — R3, no duplicate walk.
+func walkRemote(roots []repoRoot) ([]candywalk.Entity, error) {
 	cr := make([]candywalk.Root, 0, len(roots))
 	for _, r := range roots {
 		cr = append(cr, candywalk.Root{Namespace: r.Namespace, Dir: r.Dir})
 	}
-	ents, err := candywalk.CollectEntitiesRemote(cr, refs.DownloadRepo)
+	return candywalk.CollectEntitiesRemote(cr, refs.DownloadRepo)
+}
+
+func collectEntities(roots []repoRoot) ([]entity, error) {
+	ents, err := walkRemote(roots)
 	if err != nil {
 		return nil, err
 	}

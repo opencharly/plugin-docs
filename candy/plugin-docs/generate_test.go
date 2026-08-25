@@ -2,6 +2,7 @@ package docs
 
 import (
 	"bytes"
+	"github.com/opencharly/spec/refs"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -44,40 +45,47 @@ func generateSite(t *testing.T, sidebarEntries ...string) (out string, err error
 	seedHandAuthoredPages(t, root, out)
 
 	// The skills pass needs the marketplace corpus (plugins/.claude-plugin/marketplace.json) to
-	// generate the recipe pages the seeded hand-authored pages link to. In the IN-REPO layout the
-	// charly checkout carries it; in the STANDALONE layout it lives in the opencharly/marketplace
-	// repo, which is NOT checked out here. When the corpus is absent, SKIP with the live venue
-	// named (the check-docs R10 bed / the docs repo's deploy workflow runs `charly docs generate`
-	// against the full pinned charly + marketplace checkout) — a real environment precondition,
-	// not a deferral: the wiring assertions this test makes are exercised there.
-	pluginsDir := t.TempDir()
-	if mkErr := os.MkdirAll(filepath.Join(pluginsDir, ".claude-plugin"), 0o755); mkErr != nil {
-		t.Fatalf("mkdir plugins: %v", mkErr)
-	}
-	if wErr := os.WriteFile(filepath.Join(pluginsDir, ".claude-plugin", "marketplace.json"),
-		[]byte(`{"name":"synthetic","owner":"opencharly","plugins":[]}`), 0o644); wErr != nil {
-		t.Fatalf("write marketplace.json: %v", wErr)
-	}
-	// Try the real marketplace corpus if the checkout carries it (in-repo layout); else the
-	// synthetic empty corpus above is used and the recipe-link assertions below decide.
-	if real := filepath.Join(root, "plugins", ".claude-plugin", "marketplace.json"); fileExists(real) {
-		if cpErr := copyFile(real, filepath.Join(pluginsDir, ".claude-plugin", "marketplace.json")); cpErr != nil {
-			t.Fatalf("copy marketplace.json: %v", cpErr)
-		}
-	}
+	// generate the recipe pages the seeded hand-authored pages link to. marketplaceCorpusDir
+	// resolves it from the in-repo checkout OR fetches it from the opencharly/marketplace repo via
+	// refs.DownloadRepo (the same standalone fetch the generator uses).
+	pluginsDir := marketplaceCorpusDir(t)
 
 	return out, generate(root, out, pluginsDir)
 }
 
-// marketplaceCorpusPresent reports whether the run can resolve the seeded pages' recipe links:
-// the charly project checkout (superprojectRoot) must carry the marketplace corpus at
-// plugins/.claude-plugin/marketplace.json (the in-repo layout). In the standalone plugin-docs
-// layout the charly SUBMODULE has the candy corpus but not the marketplace corpus — the
-// recipe-generating skills pass needs it, so the corpus-dependent tests skip there.
-func marketplaceCorpusPresent(t *testing.T) bool {
+// marketplaceCorpusDir returns a directory holding the marketplace corpus
+// (plugins/.claude-plugin/marketplace.json) the skills pass needs to generate the recipe pages
+// the seeded hand-authored pages link to. In the IN-REPO layout the charly checkout carries it
+// at <root>/plugins; in the STANDALONE layout it is fetched from the opencharly/marketplace repo
+// via refs.DownloadRepo — the SAME standalone fetch the generator's CollectEntitiesRemote uses,
+// so the corpus-dependent tests exercise the changed fetch path rather than skipping.
+func marketplaceCorpusDir(t *testing.T) string {
 	t.Helper()
+	// The Phase-3 pipeline regenerates the marketplace corpus via `charly marketplace generate`
+	// (the remote-aware discovery); the PUBLISHED marketplace repo at main is stale until that
+	// regeneration lands. Prefer a freshly regenerated tree when one is provided (the RDD bed
+	// regenerates into a temp dir and passes it via CHARLY_DOCS_MARKETPLACE), else fall back to
+	// the in-repo checkout, else fetch the published repo.
+	if dir := os.Getenv("CHARLY_DOCS_MARKETPLACE"); dir != "" {
+		if fileExists(filepath.Join(dir, ".claude-plugin", "marketplace.json")) {
+			return dir
+		}
+	}
 	root := superprojectRoot(t)
-	return fileExists(filepath.Join(root, "plugins", ".claude-plugin", "marketplace.json"))
+	inRepo := filepath.Join(root, "plugins")
+	if fileExists(filepath.Join(inRepo, ".claude-plugin", "marketplace.json")) {
+		return inRepo
+	}
+	// Standalone layout: fetch the marketplace repo at its newest tag.
+	tag, err := refs.GitDefaultBranch(refs.RepoGitURL("github.com/opencharly/marketplace"))
+	if err != nil {
+		t.Fatalf("resolve marketplace default branch: %v", err)
+	}
+	dir, err := refs.DownloadRepo("github.com/opencharly/marketplace", tag)
+	if err != nil {
+		t.Fatalf("fetch marketplace corpus: %v", err)
+	}
+	return dir
 }
 
 func fileExists(p string) bool {
@@ -92,7 +100,6 @@ func copyFile(src, dst string) error {
 	}
 	return os.WriteFile(dst, b, 0o644)
 }
-
 
 // superprojectRoot resolves the charly project checkout whose corpus the generator reads.
 // In the IN-REPO layout (charly/candy/plugin-docs) that is two levels up (the charly repo
@@ -208,9 +215,7 @@ func seedHandAuthoredPages(t *testing.T, root, out string) {
 // the full pinned charly + marketplace checkout. In the IN-REPO layout (a charly checkout with
 // the marketplace corpus) the test runs in full.
 func TestGenerateWiresLeafGenerators(t *testing.T) {
-	if !marketplaceCorpusPresent(t) {
-		t.Skip("marketplace corpus absent (standalone layout) — the wiring assertions run in the check-docs bed / docs deploy workflow against the full charly + marketplace checkout")
-	}
+	_ = marketplaceCorpusDir(t) // fetch the corpus (or fail) before the assertions
 	out, genErr := generateSite(t,
 		"      { label: 'The Vision', link: '/vision/' },",
 		"      { label: 'Recipes', link: '/recipes/' },",
@@ -253,9 +258,7 @@ func TestGenerateWiresLeafGenerators(t *testing.T) {
 // precisely because the boundary is content, not location. This test plants a headerless file
 // under reference/candy/ and asserts generate() leaves it alone.
 func TestGeneratePreservesHeaderlessFilesUnderGeneratedTrees(t *testing.T) {
-	if !marketplaceCorpusPresent(t) {
-		t.Skip("marketplace corpus absent (standalone layout) — the wiring assertions run in the check-docs bed / docs deploy workflow against the full charly + marketplace checkout")
-	}
+	_ = marketplaceCorpusDir(t) // fetch the corpus (or fail) before the assertions
 	root := superprojectRoot(t)
 	base := t.TempDir()
 	out := filepath.Join(base, "src", "content", "docs")
@@ -267,6 +270,7 @@ func TestGeneratePreservesHeaderlessFilesUnderGeneratedTrees(t *testing.T) {
 		t.Fatalf("write astro config: %v", err)
 	}
 	seedHandAuthoredPages(t, root, out)
+	_ = marketplaceCorpusDir(t) // the corpus (env override, in-repo, or fetched) — generateSite uses it
 
 	kept := filepath.Join(out, "reference", "candy", "keep-me.md")
 	if err := os.MkdirAll(filepath.Dir(kept), 0o755); err != nil {
@@ -276,7 +280,7 @@ func TestGeneratePreservesHeaderlessFilesUnderGeneratedTrees(t *testing.T) {
 		t.Fatalf("write keep-me.md: %v", err)
 	}
 
-	if err := generate(root, out, filepath.Join(root, "plugins")); err != nil {
+	if err := generate(root, out, marketplaceCorpusDir(t)); err != nil {
 		t.Fatalf("generate: %v", err)
 	}
 	if _, err := os.Stat(kept); err != nil {
@@ -289,9 +293,7 @@ func TestGeneratePreservesHeaderlessFilesUnderGeneratedTrees(t *testing.T) {
 // through verifySidebarLinks and nothing else — which is what makes this a wiring test for that
 // call site specifically.
 func TestGenerateWiresSidebarGate(t *testing.T) {
-	if !marketplaceCorpusPresent(t) {
-		t.Skip("marketplace corpus absent (standalone layout) — the wiring assertions run in the check-docs bed / docs deploy workflow against the full charly + marketplace checkout")
-	}
+	_ = marketplaceCorpusDir(t) // fetch the corpus (or fail) before the assertions
 	_, err := generateSite(t,
 		"      { label: 'The Vision', link: '/vision/' },",
 		"      { label: 'Ghost', link: '/no-such-page/' },",
