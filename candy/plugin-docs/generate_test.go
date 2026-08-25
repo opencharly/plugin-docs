@@ -205,15 +205,16 @@ func seedHandAuthoredPages(t *testing.T, root, out string) {
 // as well as for existence: the seed deliberately excludes every header-carrying page, so the
 // header is proof the run wrote the file rather than the fixture.
 //
-// ENVIRONMENT PRECONDITION: the seeded hand-authored pages (testdata/site, a snapshot of the
-// docs repo) link to recipe pages generated from the MARKETPLACE skills corpus
-// (plugins/.claude-plugin/marketplace.json). In the STANDALONE plugin-docs layout the charly
-// submodule carries the candy corpus but NOT the marketplace corpus (that lives in the
-// opencharly/marketplace repo, not checked out here) — so the run cannot resolve every link and
-// the test SKIPS with the live venue named. The wiring assertions it makes are exercised there:
-// the check-docs R10 bed and the docs repo's deploy workflow run `charly docs generate` against
-// the full pinned charly + marketplace checkout. In the IN-REPO layout (a charly checkout with
-// the marketplace corpus) the test runs in full.
+// CORPUS PRECONDITION: the seeded hand-authored pages (testdata/site, a snapshot of the docs
+// repo) link to recipe pages generated from the MARKETPLACE skills corpus
+// (plugins/.claude-plugin/marketplace.json). The corpus is resolved by marketplaceCorpusDir —
+// env override (CHARLY_DOCS_MARKETPLACE, the RDD bed regenerates into a temp dir) → in-repo
+// checkout → refs.DownloadRepo fetch of the published repo — and the test RUNS IN FULL against
+// it (no skip): the generated site must resolve every seeded link, so a stale corpus (the
+// published marketplace repo predates the candy moves until `charly marketplace generate`
+// regenerates it) fails the run. The candy-skill projection (collectCandySkills) keeps moved
+// candies' skills resolvable from the remote-aware walk even against a stale marketplace
+// corpus.
 func TestGenerateWiresLeafGenerators(t *testing.T) {
 	_ = marketplaceCorpusDir(t) // fetch the corpus (or fail) before the assertions
 	out, genErr := generateSite(t,
