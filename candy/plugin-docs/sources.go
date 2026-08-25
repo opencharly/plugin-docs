@@ -126,6 +126,14 @@ func collectEntities(roots []repoRoot) ([]entity, error) {
 	if err != nil {
 		return nil, err
 	}
+	return collectEntitiesFrom(ents)
+}
+
+// collectEntitiesFrom projects an ALREADY-walked entity set onto this generator's entity/
+// candyView/boxView — the R3 single-walk shape: generate() walks ONCE (walkRemote) and feeds
+// both the candy projection (here) and the candy-skill projection (collectCandySkills) from
+// the same slice, never re-walking.
+func collectEntitiesFrom(ents []candywalk.Entity) ([]entity, error) {
 	var out []entity
 	for _, e := range ents {
 		if e.Kind != "candy" {

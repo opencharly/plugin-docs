@@ -47,11 +47,13 @@ func generate(root, out, pluginsDir string) error {
 	}
 	fmt.Printf("charly docs: walking %d repo root(s): %s\n", len(roots), strings.Join(namespaces, ", "))
 
+	// ONE remote-aware walk feeds both projections (R3): the candy/box projection
+	// (collectEntitiesFrom) and the candy-skill projection (collectCandySkills).
 	rawEnts, err := walkRemote(roots)
 	if err != nil {
 		return err
 	}
-	entities, err := collectEntities(roots)
+	entities, err := collectEntitiesFrom(rawEnts)
 	if err != nil {
 		return err
 	}
