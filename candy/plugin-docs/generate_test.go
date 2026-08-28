@@ -133,7 +133,11 @@ func superprojectRoot(t *testing.T) string {
 	repoRoot := filepath.Dir(filepath.Dir(cwd)) // candy/plugin-docs -> <repo>
 	sub := filepath.Join(repoRoot, "charly")
 	if _, err := os.Stat(filepath.Join(sub, unifiedFileName)); err != nil {
-		t.Fatalf("no charly project root above %s and no charly submodule checkout at %s: %v", cwd, sub, err)
+		// Standalone plugin-docs checkout (no charly submodule, no enclosing charly
+		// project): skip rather than fail — the full-corpus tests need a real charly
+		// project root to generate against. The repo CI clones charly recursively, so
+		// the tests run in full there; a bare plugin-docs clone skips them.
+		t.Skipf("no charly project root above %s and no charly submodule checkout at %s — skipping full-corpus test (clone charly recursively to run it)", cwd, sub)
 	}
 	return sub
 }
