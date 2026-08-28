@@ -171,3 +171,4 @@ func generate(root, out, pluginsDir string) error {
 		skillPages, pluginPages, providerWords, cliPages, candyPages, boxPages, pruned)
 	return nil
 }
+// gate-before-prune: see generate.go
