@@ -172,3 +172,4 @@ func generate(root, out, pluginsDir string) error {
 	return nil
 }
 // gate-before-prune: see generate.go
+// gate-before-prune: see generate.go (collectDangling before the prune)
