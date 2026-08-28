@@ -307,3 +307,74 @@ func TestGenerateWiresSidebarGate(t *testing.T) {
 		t.Errorf("error should name the dead sidebar target, got: %v", err)
 	}
 }
+
+// copyTree copies a directory tree (files only) from src to dst.
+func copyTree(src, dst string) error {
+	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return os.MkdirAll(filepath.Join(dst, path[len(src):]), 0o755)
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(filepath.Join(dst, path[len(src):]), raw, 0o644)
+	})
+}
+
+// TestGenerateGateBeforePrune locks in the ordering fix for the prune-before-gate defect
+// (opencharly/charly#333): a run the cross-reference gate rejects must leave the output tree
+// intact. Before the fix, pruneGeneratedPages ran first, so a refused run deleted every page
+// carrying the generated header — the site was left deleted on a run that wrote nothing.
+func TestGenerateGateBeforePrune(t *testing.T) {
+	// A marketplace corpus with a bad reference injected: the gate must reject it.
+	corpus := marketplaceCorpusDir(t)
+	badCorpus := t.TempDir()
+	if err := copyTree(corpus, badCorpus); err != nil {
+		t.Fatalf("copy corpus: %v", err)
+	}
+	// Inject an unresolvable reference into a skill body.
+	skillPath := filepath.Join(badCorpus, "internals", "skills", "git-workflow", "SKILL.md")
+	f, err := os.OpenFile(skillPath, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatalf("open skill for injection: %v", err)
+	}
+	if _, err := f.WriteString("\nSee /charly-nonexistent:fake-skill for details.\n"); err != nil {
+		t.Fatalf("inject bad reference: %v", err)
+	}
+	f.Close()
+	t.Setenv("CHARLY_DOCS_MARKETPLACE", badCorpus)
+
+	root := superprojectRoot(t)
+	base := t.TempDir()
+	out := filepath.Join(base, "src", "content", "docs")
+	if err := os.MkdirAll(out, 0o755); err != nil {
+		t.Fatalf("create content root: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(base, "astro.config.mjs"),
+		[]byte(astroConfig()), 0o644); err != nil {
+		t.Fatalf("write astro config: %v", err)
+	}
+	seedHandAuthoredPages(t, root, out)
+
+	// Seed a generated page that the prune would delete if it ran first.
+	seeded := filepath.Join(out, "seed.md")
+	if err := os.WriteFile(seeded, []byte(generatedHeader+"\n# seed\n"), 0o644); err != nil {
+		t.Fatalf("seed generated page: %v", err)
+	}
+
+	err = generate(root, out, badCorpus)
+	if err == nil {
+		t.Fatal("generate: expected the cross-reference gate to reject the bad reference, got nil")
+	}
+	if !strings.Contains(err.Error(), "/charly-nonexistent:fake-skill") {
+		t.Fatalf("generate: expected the cross-reference error naming the bad ref, got: %v", err)
+	}
+	// The refused run must leave the output tree intact: the seeded page survives.
+	if _, statErr := os.Stat(seeded); statErr != nil {
+		t.Fatalf("refused run pruned the output tree: seeded page %s is gone (%v)", seeded, statErr)
+	}
+}
