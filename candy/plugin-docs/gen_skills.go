@@ -282,6 +282,23 @@ func buildResolver(skills []skill, m *marketplace) linkResolver {
 }
 
 // generateSkills emits every recipe card and its reference pages.
+// collectDangling runs the skill rewrite pass WITHOUT writing any page, collecting every
+// unresolvable cross-reference. It is the gate that must run BEFORE the prune: a refused run
+// (a dangling reference) must leave the output tree intact. Mirrors generateSkills' loop but
+// drops the page writes — the rewrite is pure, so the dangling set is identical.
+func collectDangling(skills []skill, m *marketplace, lr linkResolver) []danglingRef {
+	var dangling []danglingRef
+	for _, s := range skills {
+		_, d := lr.rewrite(s.Body, s.PluginDir, s.Name, skillPagePath(s))
+		dangling = append(dangling, d...)
+		for _, r := range s.References {
+			_, rd := lr.rewrite(r.Body, s.PluginDir, s.Name, referencePagePath(s, r.Stem))
+			dangling = append(dangling, rd...)
+		}
+	}
+	return dangling
+}
+
 func generateSkills(outRoot string, skills []skill, m *marketplace, lr linkResolver) (int, []danglingRef, error) {
 	dirToPlugin := map[string]marketplacePlugin{}
 	for _, p := range m.Plugins {

@@ -133,7 +133,11 @@ func superprojectRoot(t *testing.T) string {
 	repoRoot := filepath.Dir(filepath.Dir(cwd)) // candy/plugin-docs -> <repo>
 	sub := filepath.Join(repoRoot, "charly")
 	if _, err := os.Stat(filepath.Join(sub, unifiedFileName)); err != nil {
-		t.Fatalf("no charly project root above %s and no charly submodule checkout at %s: %v", cwd, sub, err)
+		// Standalone plugin-docs checkout (no charly submodule, no enclosing charly
+		// project): skip rather than fail — the full-corpus tests need a real charly
+		// project root to generate against. The repo CI clones charly recursively, so
+		// the tests run in full there; a bare plugin-docs clone skips them.
+		t.Skipf("no charly project root above %s and no charly submodule checkout at %s — skipping full-corpus test (clone charly recursively to run it)", cwd, sub)
 	}
 	return sub
 }
@@ -305,5 +309,76 @@ func TestGenerateWiresSidebarGate(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "/no-such-page/") {
 		t.Errorf("error should name the dead sidebar target, got: %v", err)
+	}
+}
+
+// copyTree copies a directory tree (files only) from src to dst.
+func copyTree(src, dst string) error {
+	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return os.MkdirAll(filepath.Join(dst, path[len(src):]), 0o755)
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(filepath.Join(dst, path[len(src):]), raw, 0o644)
+	})
+}
+
+// TestGenerateGateBeforePrune locks in the ordering fix for the prune-before-gate defect
+// (opencharly/charly#333): a run the cross-reference gate rejects must leave the output tree
+// intact. Before the fix, pruneGeneratedPages ran first, so a refused run deleted every page
+// carrying the generated header — the site was left deleted on a run that wrote nothing.
+func TestGenerateGateBeforePrune(t *testing.T) {
+	// A marketplace corpus with a bad reference injected: the gate must reject it.
+	corpus := marketplaceCorpusDir(t)
+	badCorpus := t.TempDir()
+	if err := copyTree(corpus, badCorpus); err != nil {
+		t.Fatalf("copy corpus: %v", err)
+	}
+	// Inject an unresolvable reference into a skill body.
+	skillPath := filepath.Join(badCorpus, "internals", "skills", "git-workflow", "SKILL.md")
+	f, err := os.OpenFile(skillPath, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatalf("open skill for injection: %v", err)
+	}
+	if _, err := f.WriteString("\nSee /charly-nonexistent:fake-skill for details.\n"); err != nil {
+		t.Fatalf("inject bad reference: %v", err)
+	}
+	f.Close()
+	t.Setenv("CHARLY_DOCS_MARKETPLACE", badCorpus)
+
+	root := superprojectRoot(t)
+	base := t.TempDir()
+	out := filepath.Join(base, "src", "content", "docs")
+	if err := os.MkdirAll(out, 0o755); err != nil {
+		t.Fatalf("create content root: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(base, "astro.config.mjs"),
+		[]byte(astroConfig()), 0o644); err != nil {
+		t.Fatalf("write astro config: %v", err)
+	}
+	seedHandAuthoredPages(t, root, out)
+
+	// Seed a generated page that the prune would delete if it ran first.
+	seeded := filepath.Join(out, "seed.md")
+	if err := os.WriteFile(seeded, []byte(generatedHeader+"\n# seed\n"), 0o644); err != nil {
+		t.Fatalf("seed generated page: %v", err)
+	}
+
+	err = generate(root, out, badCorpus)
+	if err == nil {
+		t.Fatal("generate: expected the cross-reference gate to reject the bad reference, got nil")
+	}
+	if !strings.Contains(err.Error(), "/charly-nonexistent:fake-skill") {
+		t.Fatalf("generate: expected the cross-reference error naming the bad ref, got: %v", err)
+	}
+	// The refused run must leave the output tree intact: the seeded page survives.
+	if _, statErr := os.Stat(seeded); statErr != nil {
+		t.Fatalf("refused run pruned the output tree: seeded page %s is gone (%v)", seeded, statErr)
 	}
 }

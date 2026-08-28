@@ -26,13 +26,6 @@ func generate(root, out, pluginsDir string) error {
 		return fmt.Errorf("create --out: %w", err)
 	}
 
-	// Clear the previous run's output before emitting this one, so a page the generator no longer
-	// produces cannot survive as a stale file that every gate above reads as a pass. See prune.go.
-	pruned, err := pruneGeneratedPages(out)
-	if err != nil {
-		return err
-	}
-
 	roots, err := repoRoots(root)
 	if err != nil {
 		return err
@@ -86,8 +79,25 @@ func generate(root, out, pluginsDir string) error {
 	skills = append(skills, collectCandySkills(rawEnts)...)
 	resolver := buildResolver(skills, market)
 
+	// The cross-reference gate runs BEFORE the prune: a refused run (an unresolvable
+	// `/charly-<plugin>:<skill>` reference) must leave the output tree intact. The gate only
+	// needs the collected skills, never the emitted tree — collectDangling is the pure
+	// rewrite pass without the page writes, so a dangling reference fails here, before
+	// pruneGeneratedPages deletes anything.
+	if err := danglingError(collectDangling(skills, market, resolver)); err != nil {
+		return err
+	}
+
+	// Clear the previous run's output before emitting this one, so a page the generator no longer
+	// produces cannot survive as a stale file that every gate above reads as a pass. See prune.go.
+	pruned, err := pruneGeneratedPages(out)
+	if err != nil {
+		return err
+	}
+
 	// Emit. The skill pass collects unresolvable cross-references rather than failing on the
-	// first one, so a contributor sees every broken reference in a single run.
+	// first one, so a contributor sees every broken reference in a single run. The gate above
+	// already validated the same inputs, so this second check is a redundant safety net.
 	skillPages, dangling, err := generateSkills(out, skills, market, resolver)
 	if err != nil {
 		return err
@@ -161,3 +171,5 @@ func generate(root, out, pluginsDir string) error {
 		skillPages, pluginPages, providerWords, cliPages, candyPages, boxPages, pruned)
 	return nil
 }
+// gate-before-prune: see generate.go
+// gate-before-prune: see generate.go (collectDangling before the prune)
