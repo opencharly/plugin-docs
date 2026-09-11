@@ -509,6 +509,73 @@ func TestAssembleCatalogDedupesClosureSurfacing(t *testing.T) {
 	}
 }
 
+// TestAssembleCatalogMissingManifestIsEmptyCorpus locks the minimal-root contract: a project
+// root with NO compiled corpus manifest and NO go.mod at the default paths (the standalone
+// plugin-docs repo layout - no charly/ submodule) assembles the EMPTY compiled set at the
+// schema defaults, and the lazily-read go.mod is never required because an empty corpus needs
+// no pins. This is the pre-config generator behavior: generation on such a root is valid,
+// never an error, and the local walk still runs.
+func TestAssembleCatalogMissingManifestIsEmptyCorpus(t *testing.T) {
+	root := t.TempDir()
+	writeRoot(t, root,
+		"version: 2026.250.0001\ndiscover:\n    - path: candy\n      recursive: true\n",
+		"", "", // no compiled corpus manifest, no go.mod - the minimal root
+		"candy/local-keeper")
+	writeCandyAt(t, root, "candy/local-keeper", "local-keeper:\n    candy:\n        version: 2026.200.1000\n        description: Local fixture candy.\n")
+
+	cfg := defaultSiteConfig()
+	fetches := 0
+	raw, compiled, err := assembleCatalog(root, cfg, repoResolver{
+		download: func(repoPath, version string) (string, error) {
+			fetches++
+			return "", fmt.Errorf("unexpected fetch of %s@%s", repoPath, version)
+		},
+		latestTag: nil, // never consulted: an empty corpus means no release/extra repos either
+	})
+	if err != nil {
+		t.Fatalf("assembleCatalog: %v", err)
+	}
+	if fetches != 0 {
+		t.Errorf("%d fetches, want 0 (no compiled plugins, no release/extra repos)", fetches)
+	}
+	if len(compiled) != 0 {
+		t.Errorf("compiled placement map = %v, want empty with no manifest", compiled)
+	}
+	found := false
+	for _, e := range raw {
+		if e.Name == "local-keeper" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("local walk did not surface local-keeper (got %d entities)", len(raw))
+	}
+}
+
+// TestAssembleCatalogMalformedCompiledManifestErrors locks the PRESENCE discriminator: a
+// manifest that is present but malformed is a real configuration error and must NOT be
+// swallowed as the empty corpus - only an ABSENT file reads as empty.
+func TestAssembleCatalogMalformedCompiledManifestErrors(t *testing.T) {
+	root := t.TempDir()
+	writeRoot(t, root,
+		"version: 2026.250.0001\n",
+		"compiled_plugins: [", // present, malformed (unclosed flow sequence)
+		"",
+		"none")
+	_, _, err := assembleCatalog(root, defaultSiteConfig(), repoResolver{
+		download: func(repoPath, version string) (string, error) {
+			return "", fmt.Errorf("unexpected fetch of %s@%s", repoPath, version)
+		},
+		latestTag: nil,
+	})
+	if err == nil {
+		t.Fatal("assembleCatalog: expected an error for a malformed manifest, got nil")
+	}
+	if !strings.Contains(err.Error(), "compiled corpus manifest") {
+		t.Errorf("error should name the compiled corpus manifest, got: %v", err)
+	}
+}
+
 // TestGenerateRegenNoOp runs the FULL generator twice over the same fixture root and asserts a
 // byte-identical tree - regeneration on a clean tree is a no-op. The fixture root carries a
 // docs: node with the compiled corpus DISABLED and no release/extra repos, so the run performs

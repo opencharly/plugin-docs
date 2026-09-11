@@ -198,9 +198,20 @@ func compiledPluginRef(v string) (string, error) {
 // readCompiledPluginNames reads ONLY the compiled_plugins: list from a charly.yml that
 // declares the compiled-in corpus (the same one-field decode pluginsgen uses - one canonical
 // read of the list, R3).
+//
+// An ABSENT manifest is the EMPTY compiled corpus: a minimal run root whose charly/charly.yml
+// does not exist (the standalone plugin-docs repo, say - its root has no compiled-corpus
+// manifest) must generate exactly like the pre-config generator, which ran with no compiled
+// set there. An empty list then needs no go.mod pins, so the lazily-read go.mod is never
+// required either. The discrimination is file PRESENCE: a manifest that is present but
+// malformed stays a configuration error - a real root with a broken corpus declaration must
+// not silently read as the empty set.
 func readCompiledPluginNames(path string) ([]string, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
 		return nil, fmt.Errorf("read compiled corpus manifest %s: %w", path, err)
 	}
 	var doc struct {
@@ -310,8 +321,11 @@ func assembleCatalog(root string, cfg siteConfig, r repoResolver) ([]candywalk.E
 	compiled := make(map[string]bool)
 
 	// The go.mod is read lazily: only when a compiled name or a release repo actually needs a
-	// pin. An EMPTY compiled corpus with no release/extra repos therefore never requires the
-	// go.mod to exist - the pre-config behavior (charly/charly.yml alone) is preserved.
+	// pin. An ABSENT manifest readCompiledPluginNames resolves to the empty list, so a minimal
+	// run root with neither manifest nor go.mod (the standalone plugin-docs repo) assembles the
+	// EMPTY compiled set at the schema defaults - generation there is valid, never an error -
+	// and an empty corpus with no release/extra repos never requires the go.mod to exist
+	// either: the pre-config generator behavior is preserved.
 	var versions map[string]string
 	ensureVersions := func() error {
 		if versions != nil {
