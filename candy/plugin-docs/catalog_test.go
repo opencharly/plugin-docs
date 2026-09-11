@@ -390,6 +390,86 @@ func TestAssembleCatalogUnionsCompiledReleaseAndExtra(t *testing.T) {
 	}
 }
 
+// TestAssembleCatalogPinsReleaseRepoWithCompiledDisabled proves the go.mod require pins are
+// honored for release repos even when the compiled corpus is DISABLED: the version map must be
+// populated for the release loop (a nil map would silently fall every repo back to its latest
+// tag - the compiled-enabled union test cannot see this path). The disabled corpus is never
+// read (no compiled_plugins manifest), the pinned repo resolves at the go.mod-derived tag, and
+// the latest-tag seam is never consulted.
+func TestAssembleCatalogPinsReleaseRepoWithCompiledDisabled(t *testing.T) {
+	base := t.TempDir()
+	fake := &fakeRepoResolver{repos: map[string]string{}, latest: map[string]string{}}
+	fake.repos["github.com/opencharly/plugin-x"] = writePluginRepo(t, base, "plugin-x", "2026.253.0042", false)
+	fake.latest["github.com/opencharly/plugin-x"] = "v2026.253.9999"
+
+	root := filepath.Join(base, "root")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeCandyAt(t, root, "candy/local-keeper", strings.Join([]string{
+		"local-keeper:",
+		"    candy:",
+		"        version: 2026.200.1000",
+		"        description: Local fixture candy.",
+	}, "\n"))
+	// docs: node with the compiled corpus DISABLED and one go.mod-pinned release repo. No
+	// compiled_plugins manifest is written: the disabled corpus must never be read.
+	writeRoot(t, root,
+		strings.Join([]string{
+			"docs:",
+			"    docs:",
+			"        sources:",
+			"            compiled:",
+			"                enabled: false",
+			"            release_repos:",
+			"                - plugin-x",
+		}, "\n"),
+		"",
+		strings.Join([]string{
+			"module github.com/opencharly/fixture",
+			"",
+			"require (",
+			"\tgithub.com/opencharly/plugin-x/candy/plugin-x v0.2026253.42",
+			")",
+		}, "\n"),
+		"none")
+
+	cfg, err := readDocsConfig(root)
+	if err != nil {
+		t.Fatalf("readDocsConfig: %v", err)
+	}
+	if cfg.compiledEnabled {
+		t.Fatal("compiledEnabled = true, want false (explicit sources.compiled.enabled: false)")
+	}
+	raw, compiled, err := assembleCatalog(root, cfg, repoResolver{download: fake.download, latestTag: fake.latestTag})
+	if err != nil {
+		t.Fatalf("assembleCatalog: %v", err)
+	}
+
+	// plugin-x resolves at the go.mod require pin mapped to the repo tag - NOT its latest tag.
+	// Without the version-map population this resolves v2026.253.9999 and fails both asserts.
+	if got := strings.Join(fake.refs("github.com/opencharly/plugin-x"), ","); got != "v2026.253.0042" {
+		t.Errorf("plugin-x resolved at %q, want the go.mod-derived v2026.253.0042 (pin v0.2026253.42)", got)
+	}
+	if fake.latestSeen["github.com/opencharly/plugin-x"] {
+		t.Error("latest-tag seam consulted for plugin-x, which the go.mod pins")
+	}
+	if len(compiled) != 0 {
+		t.Errorf("compiled placement map = %v, want empty with the corpus disabled", compiled)
+	}
+	names := map[string]string{}
+	for _, e := range raw {
+		if e.Namespace == "" { // local walk
+			names["local:"+e.Name] = "local"
+		} else {
+			names[e.Namespace+"/"+e.Name] = e.SourceRoot
+		}
+	}
+	if _, ok := names["github.com/opencharly/plugin-x:v2026.253.0042/plugin-x"]; !ok {
+		t.Errorf("plugin-x entity absent from the unioned set; got: %v", names)
+	}
+}
+
 // TestAssembleCatalogDedupesClosureSurfacing proves the union does not double-emit: a repo its
 // OWN fixture references by @github ref at the SAME ref the compiled pin maps to surfaces once.
 func TestAssembleCatalogDedupesClosureSurfacing(t *testing.T) {

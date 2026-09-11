@@ -368,6 +368,20 @@ func assembleCatalog(root string, cfg siteConfig, r repoResolver) ([]candywalk.E
 	}
 
 	repos := append(append([]string(nil), cfg.releaseRepos...), cfg.extraRepos...)
+	// The release loop consults the compiled-corpus go.mod for require pins - populate the
+	// version map BEFORE it, so a go.mod-pinned release repo is honored even when the compiled
+	// corpus is disabled (or its list empty): a nil map would silently fall every repo back to
+	// its latest tag. The read stays lazy when no release repo is configured - an extra-only
+	// list never touches the go.mod, and a config with neither compiled plugins nor
+	// release/extra repos never requires it to exist.
+	for _, repo := range cfg.releaseRepos {
+		if strings.TrimSpace(repo) != "" {
+			if err := ensureVersions(); err != nil {
+				return nil, nil, err
+			}
+			break
+		}
+	}
 	seenRepo := make(map[string]bool)
 	for _, repo := range repos {
 		repo = strings.TrimSpace(repo)
