@@ -2,14 +2,10 @@ package docs
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/opencharly/sdk/candywalk"
 	"github.com/opencharly/spec/refs"
-	"gopkg.in/yaml.v3"
 )
 
 // unifiedFileName is the one entity filename (the project rulebook's "one filename charly.yml").
@@ -165,26 +161,4 @@ func collectEntitiesFrom(ents []candywalk.Entity) ([]entity, error) {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Slug() < out[j].Slug() })
 	return out, nil
-}
-
-// compiledPlugins reads charly/charly.yml's compiled_plugins list — the plugin candies compiled
-// INTO the charly binary. Membership is READ here rather than restated in prose, so a plugin's
-// documented placement cannot drift when the list changes. A plugin absent from this list still
-// loads out-of-process over gRPC when a plan references its word (the coexist path).
-func compiledPlugins(root string) (map[string]bool, error) {
-	raw, err := os.ReadFile(filepath.Join(root, "charly", unifiedFileName))
-	if err != nil {
-		return nil, fmt.Errorf("read charly/charly.yml: %w", err)
-	}
-	var doc struct {
-		CompiledPlugins []string `yaml:"compiled_plugins"`
-	}
-	if err := yaml.Unmarshal(raw, &doc); err != nil {
-		return nil, fmt.Errorf("parse charly/charly.yml: %w", err)
-	}
-	set := make(map[string]bool, len(doc.CompiledPlugins))
-	for _, p := range doc.CompiledPlugins {
-		set[strings.TrimSpace(p)] = true
-	}
-	return set, nil
 }
