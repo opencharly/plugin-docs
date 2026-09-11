@@ -2,7 +2,6 @@ package docs
 
 import (
 	"bytes"
-	"github.com/opencharly/spec/refs"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -16,23 +15,31 @@ import (
 // proves a function works; it says nothing about whether the pipeline runs it. These two tests
 // cover the wiring, by driving the real entry point and asserting on what the run leaves behind.
 
-// generateSite runs generate() over the real repository into a throwaway site whose sidebar the
-// test controls.
+// generateSite runs generate() over the hermetic fixture project into a throwaway site whose
+// sidebar the test controls.
 //
 // The layout mirrors the real one because both gates at the end of generate() depend on it:
 // verifySidebarLinks walks UP from the content root for the Astro config, so the config must sit
 // above --out rather than inside it, and verifySiteLinks resolves every internal link against the
 // pages present in --out — including the hand-authored ones the generator does not own but does
-// link to (the README projection alone points at eight of them). Seeding those is therefore part
-// of building a site, not a convenience.
-// generateSite runs generate() against the charly project checkout (superprojectRoot — the
-// in-repo repo root or the standalone repo's charly submodule, both holding the FULL corpus)
-// with a synthetic plugins dir (the generator's skills pass needs a marketplace.json; the
-// corpus itself is the checkout's own, so the seeded pages' internal links resolve).
+// link to (the landing hero's Get-started actions point at /start/install/ and /start/quickstart/).
+// Seeding those is therefore part of building a site, not a convenience.
+//
+// The ENTIRE environment is hermetic testdata, so the tests run in a bare clone with no external
+// charly/marketplace checkout and no network (the R2 gate): the generate root is testdata/project,
+// a minimal self-contained charly project (a docs: node with the compiled corpus DISABLED and no
+// release/extra repos, so the catalog assembly never fetches, plus the README/VISION/GRIEVANCES/
+// LIBERATION narratives the leaf passes project); the marketplace corpus is testdata/marketplace,
+// a one-plugin fixture whose refs/skills are internally consistent (every fixture card body
+// carries no unresolved harness reference — corpus completeness of the published marketplace repo
+// is NOT this test's subject, the WIRING is, and the published corpus can in fact carry drift: its
+// recipes/automation/crabbox-deploy.md card references the skill /charly-tools:crabbox, which has
+// no defined card); and the hand-authored pages live in testdata/site, seeded with the two pages
+// the generated landing links to.
 func generateSite(t *testing.T, sidebarEntries ...string) (out string, err error) {
 	t.Helper()
 
-	root := superprojectRoot(t)
+	root := fixtureProjectRoot(t)
 	base := t.TempDir()
 	out = filepath.Join(base, "src", "content", "docs")
 	if mkErr := os.MkdirAll(out, 0o755); mkErr != nil {
@@ -42,48 +49,37 @@ func generateSite(t *testing.T, sidebarEntries ...string) (out string, err error
 		[]byte(astroConfig(sidebarEntries...)), 0o644); wErr != nil {
 		t.Fatalf("write astro config: %v", wErr)
 	}
-	seedHandAuthoredPages(t, root, out)
+	seedHandAuthoredPages(t, out)
 
 	// The skills pass needs the marketplace corpus (plugins/.claude-plugin/marketplace.json) to
-	// generate the recipe pages the seeded hand-authored pages link to. marketplaceCorpusDir
-	// resolves it from the in-repo checkout OR fetches it from the opencharly/marketplace repo via
-	// refs.DownloadRepo (the same standalone fetch the generator uses).
-	pluginsDir := marketplaceCorpusDir(t)
+	// generate the recipe pages the seed and the recipes index link to. fixtureMarketplaceDir
+	// resolves it from the fixture testdata (keeping the CHARLY_DOCS_MARKETPLACE override, the
+	// seam the RDD bed uses to pass a freshly regenerated corpus).
+	pluginsDir := fixtureMarketplaceDir(t)
 
 	return out, generate(root, out, pluginsDir)
 }
 
-// marketplaceCorpusDir returns a directory holding the marketplace corpus
-// (plugins/.claude-plugin/marketplace.json) the skills pass needs to generate the recipe pages
-// the seeded hand-authored pages link to. In the IN-REPO layout the charly checkout carries it
-// at <root>/plugins; in the STANDALONE layout it is fetched from the opencharly/marketplace repo
-// via refs.DownloadRepo — the SAME standalone fetch the generator's CollectEntitiesRemote uses,
-// so the corpus-dependent tests exercise the changed fetch path rather than skipping.
-func marketplaceCorpusDir(t *testing.T) string {
+// fixtureMarketplaceDir returns the fixture marketplace corpus (testdata/marketplace): a small,
+// INTERNALLY CONSISTENT skill set — every reference a fixture card body makes resolves to a
+// defined card — so the corpus-dependent tests exercise their WIRING hermetically, without
+// fetching the published opencharly/marketplace repo (whose corpus can carry drift: the
+// /charly-tools:crabbox skill referenced by three real recipe cards has no defined card). A
+// CHARLY_DOCS_MARKETPLACE override wins when set (the RDD bed regenerates the corpus into a temp
+// dir and passes it there); otherwise the fixture corpus is used.
+func fixtureMarketplaceDir(t *testing.T) string {
 	t.Helper()
-	// The Phase-3 pipeline regenerates the marketplace corpus via `charly marketplace generate`
-	// (the remote-aware discovery); the PUBLISHED marketplace repo at main is stale until that
-	// regeneration lands. Prefer a freshly regenerated tree when one is provided (the RDD bed
-	// regenerates into a temp dir and passes it via CHARLY_DOCS_MARKETPLACE), else fall back to
-	// the in-repo checkout, else fetch the published repo.
 	if dir := os.Getenv("CHARLY_DOCS_MARKETPLACE"); dir != "" {
 		if fileExists(filepath.Join(dir, ".claude-plugin", "marketplace.json")) {
 			return dir
 		}
 	}
-	root := superprojectRoot(t)
-	inRepo := filepath.Join(root, "plugins")
-	if fileExists(filepath.Join(inRepo, ".claude-plugin", "marketplace.json")) {
-		return inRepo
-	}
-	// Standalone layout: fetch the marketplace repo at its newest tag.
-	tag, err := refs.GitDefaultBranch(refs.RepoGitURL("github.com/opencharly/marketplace"))
+	dir, err := filepath.Abs(filepath.Join("testdata", "marketplace"))
 	if err != nil {
-		t.Fatalf("resolve marketplace default branch: %v", err)
+		t.Fatalf("resolve fixture marketplace dir: %v", err)
 	}
-	dir, err := refs.DownloadRepo("github.com/opencharly/marketplace", tag)
-	if err != nil {
-		t.Fatalf("fetch marketplace corpus: %v", err)
+	if !fileExists(filepath.Join(dir, ".claude-plugin", "marketplace.json")) {
+		t.Fatalf("fixture marketplace corpus missing at %s — refresh it from testdata/marketplace", dir)
 	}
 	return dir
 }
@@ -101,76 +97,54 @@ func copyFile(src, dst string) error {
 	return os.WriteFile(dst, b, 0o644)
 }
 
-// superprojectRoot resolves the charly project checkout whose corpus the generator reads.
-// In the IN-REPO layout (charly/candy/plugin-docs) that is two levels up (the charly repo
-// root, holding charly.yml + candy/). In the STANDALONE layout (the candy de-submodule
-// cutover, Phase 2c — this repo IS opencharly/plugin-docs) the corpus lives in the pinned
-// charly SUBMODULE at <repo>/charly, which this repo's .gitmodules declares and CI checks
-// out recursively. The module dir itself (candy/plugin-docs) carries a charly.yml too — but
-// that is a CANDY manifest, not a project root — so the discriminator is the presence of a
-// candy/ SIBLING dir (the project layout), never the candy's own manifest.
-func superprojectRoot(t *testing.T) string {
+// fixtureProjectRoot returns the hermetic generate root: testdata/project, a MINIMAL
+// self-contained charly project. Its charly.yml carries a docs: node with the compiled-in corpus
+// DISABLED and no release/extra repos, so the catalog assembly (assembleCatalog) walks only the
+// fixture tree and performs ZERO fetches — no network, no external charly/marketplace checkout.
+// The README.md/VISION.md/GRIEVANCES.md/LIBERATION.md narratives the landing/vision/grievances/
+// liberation passes project live beside it. The shape mirrors the in-memory fixture
+// TestGenerateRegenNoOp builds (catalog_test.go), which is the proven hermetic minimal project.
+func fixtureProjectRoot(t *testing.T) string {
 	t.Helper()
-	cwd, err := os.Getwd()
+	dir, err := filepath.Abs(filepath.Join("testdata", "project"))
 	if err != nil {
-		t.Fatalf("getwd: %v", err)
+		t.Fatalf("resolve fixture project root: %v", err)
 	}
-	// Walk up looking for a dir holding charly.yml AND a candy/ sibling (a project root,
-	// not a candy dir). In the in-repo layout cwd = charly/candy/plugin-docs, so this
-	// skips the candy dir and lands on the charly repo root.
-	for dir := cwd; ; dir = filepath.Dir(dir) {
-		if _, err := os.Stat(filepath.Join(dir, unifiedFileName)); err == nil {
-			if _, err := os.Stat(filepath.Join(dir, "candy")); err == nil {
-				return dir
-			}
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
+	if _, err := os.Stat(filepath.Join(dir, unifiedFileName)); err != nil {
+		t.Fatalf("no fixture charly project at %s — refresh it from testdata/project: %v", dir, err)
 	}
-	// Standalone layout: the charly submodule at <repo>/charly.
-	repoRoot := filepath.Dir(filepath.Dir(cwd)) // candy/plugin-docs -> <repo>
-	sub := filepath.Join(repoRoot, "charly")
-	if _, err := os.Stat(filepath.Join(sub, unifiedFileName)); err != nil {
-		// Standalone plugin-docs checkout (no charly submodule, no enclosing charly
-		// project): skip rather than fail — the full-corpus tests need a real charly
-		// project root to generate against. The repo CI clones charly recursively, so
-		// the tests run in full there; a bare plugin-docs clone skips them.
-		t.Skipf("no charly project root above %s and no charly submodule checkout at %s — skipping full-corpus test (clone charly recursively to run it)", cwd, sub)
-	}
-	return sub
+	return dir
 }
 
 // seedHandAuthoredPages copies the fixture's hand-authored pages into a fresh --out.
 //
-// The fixture lives in testdata/site (a snapshot of the docs repo's start/ concepts/ guides/
-// trees, taken at the docs de-submodule cutover): charly no longer carries the docs submodule,
-// and the whole-site link gates still need the hand-authored pages the generator links to but
-// does not own. The snapshot is versioned with the generator; when the README projection or the
-// gates' expectations change, refresh it from the opencharly/docs repo's src/content/docs.
+// The fixture lives in testdata/site: the two pages the generated landing actually links to
+// (start/install and start/quickstart, the hero's Get-started actions). It is the hermetic
+// replacement for the docs repo's hand-authored trees: the generator-wiring tests must run in a
+// bare clone, so the seeded pages are deliberately small and their internal link graph CLOSED
+// within what the fixture run emits — a seed linking to reference/ or recipes/ pages that only the
+// full corpus and entity tree would produce would fail the site-link gate precisely because those
+// pages do not exist here, and the site-link gate checking the seeded pages like any other page is
+// the point.
 //
-// Pages are selected by the same rule pruneGeneratedPages uses — a page is generated if and only
-// if it carries the generated header — rather than by a hardcoded list of directories, so a new
+// Pages are selected by the same rule pruneGeneratedPages uses — a page is generated if and only if
+// it carries the generated header — rather than by a hardcoded list of directories, so a new
 // hand-authored tree needs no change here and, more importantly, so nothing generated can leak in.
 // That exclusion is what makes the assertions in these tests airtight: a seeded page can never
 // carry the generated header, so a page that carries one was written by the run under test.
-func seedHandAuthoredPages(t *testing.T, root, out string) {
+func seedHandAuthoredPages(t *testing.T, out string) {
 	t.Helper()
 
-	src := filepath.Join(root, "candy", "plugin-docs", "testdata", "site")
-	// Standalone-layout fallback: the fixture tree lives in THIS module's own testdata/
-	// (the in-repo path above only exists in the pre-cutover charly checkout).
-	if _, err := os.Stat(src); err != nil {
-		src = filepath.Join("testdata", "site")
+	src, err := filepath.Abs(filepath.Join("testdata", "site"))
+	if err != nil {
+		t.Fatalf("resolve hand-authored fixture tree: %v", err)
 	}
 	if _, err := os.Stat(src); err != nil {
-		t.Fatalf("no hand-authored fixture tree at %s — refresh it from the opencharly/docs "+
-			"repo's src/content/docs (start/ concepts/ guides/): %v", src, err)
+		t.Fatalf("no hand-authored fixture tree at %s — refresh it from testdata/site: %v", src, err)
 	}
 
 	header := []byte(generatedHeader)
-	err := filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -209,18 +183,15 @@ func seedHandAuthoredPages(t *testing.T, root, out string) {
 // as well as for existence: the seed deliberately excludes every header-carrying page, so the
 // header is proof the run wrote the file rather than the fixture.
 //
-// CORPUS PRECONDITION: the seeded hand-authored pages (testdata/site, a snapshot of the docs
-// repo) link to recipe pages generated from the MARKETPLACE skills corpus
-// (plugins/.claude-plugin/marketplace.json). The corpus is resolved by marketplaceCorpusDir —
-// env override (CHARLY_DOCS_MARKETPLACE, the RDD bed regenerates into a temp dir) → in-repo
-// checkout → refs.DownloadRepo fetch of the published repo — and the test RUNS IN FULL against
-// it (no skip): the generated site must resolve every seeded link, so a stale corpus (the
-// published marketplace repo predates the candy moves until `charly marketplace generate`
-// regenerates it) fails the run. The candy-skill projection (collectCandySkills) keeps moved
-// candies' skills resolvable from the remote-aware walk even against a stale marketplace
-// corpus.
+// CORPUS PRECONDITION: the seeded hand-authored pages and the generated landing link to the
+// recipe pages generated from the FIXTURE marketplace corpus (testdata/marketplace, internally
+// consistent by construction), so the run resolves every link against pages the fixture actually
+// emits. No external corpus is fetched; the fixture replaces the published marketplace repo,
+// which would at its current HEAD fail every one of these runs — its recipe card
+// recipes/automation/crabbox-deploy.md references /charly-tools:crabbox, a skill with no defined
+// card, and the cross-reference gate fails closed on it.
 func TestGenerateWiresLeafGenerators(t *testing.T) {
-	_ = marketplaceCorpusDir(t) // fetch the corpus (or fail) before the assertions
+	_ = fixtureMarketplaceDir(t) // resolve the fixture corpus (or fail) before the assertions
 	out, genErr := generateSite(t,
 		"      { label: 'The Vision', link: '/vision/' },",
 		"      { label: 'Recipes', link: '/recipes/' },",
@@ -263,8 +234,8 @@ func TestGenerateWiresLeafGenerators(t *testing.T) {
 // precisely because the boundary is content, not location. This test plants a headerless file
 // under reference/candy/ and asserts generate() leaves it alone.
 func TestGeneratePreservesHeaderlessFilesUnderGeneratedTrees(t *testing.T) {
-	_ = marketplaceCorpusDir(t) // fetch the corpus (or fail) before the assertions
-	root := superprojectRoot(t)
+	_ = fixtureMarketplaceDir(t) // resolve the fixture corpus (or fail) before the assertions
+	root := fixtureProjectRoot(t)
 	base := t.TempDir()
 	out := filepath.Join(base, "src", "content", "docs")
 	if err := os.MkdirAll(out, 0o755); err != nil {
@@ -274,8 +245,7 @@ func TestGeneratePreservesHeaderlessFilesUnderGeneratedTrees(t *testing.T) {
 		[]byte(astroConfig("      { label: 'The Vision', link: '/vision/' },")), 0o644); err != nil {
 		t.Fatalf("write astro config: %v", err)
 	}
-	seedHandAuthoredPages(t, root, out)
-	_ = marketplaceCorpusDir(t) // the corpus (env override, in-repo, or fetched) — generateSite uses it
+	seedHandAuthoredPages(t, out)
 
 	kept := filepath.Join(out, "reference", "candy", "keep-me.md")
 	if err := os.MkdirAll(filepath.Dir(kept), 0o755); err != nil {
@@ -285,7 +255,7 @@ func TestGeneratePreservesHeaderlessFilesUnderGeneratedTrees(t *testing.T) {
 		t.Fatalf("write keep-me.md: %v", err)
 	}
 
-	if err := generate(root, out, marketplaceCorpusDir(t)); err != nil {
+	if err := generate(root, out, fixtureMarketplaceDir(t)); err != nil {
 		t.Fatalf("generate: %v", err)
 	}
 	if _, err := os.Stat(kept); err != nil {
@@ -298,7 +268,7 @@ func TestGeneratePreservesHeaderlessFilesUnderGeneratedTrees(t *testing.T) {
 // through verifySidebarLinks and nothing else — which is what makes this a wiring test for that
 // call site specifically.
 func TestGenerateWiresSidebarGate(t *testing.T) {
-	_ = marketplaceCorpusDir(t) // fetch the corpus (or fail) before the assertions
+	_ = fixtureMarketplaceDir(t) // resolve the fixture corpus (or fail) before the assertions
 	_, err := generateSite(t,
 		"      { label: 'The Vision', link: '/vision/' },",
 		"      { label: 'Ghost', link: '/no-such-page/' },",
@@ -334,8 +304,10 @@ func copyTree(src, dst string) error {
 // intact. Before the fix, pruneGeneratedPages ran first, so a refused run deleted every page
 // carrying the generated header — the site was left deleted on a run that wrote nothing.
 func TestGenerateGateBeforePrune(t *testing.T) {
-	// A marketplace corpus with a bad reference injected: the gate must reject it.
-	corpus := marketplaceCorpusDir(t)
+	// A copy of the fixture marketplace corpus with a bad reference injected: the gate must
+	// reject it. The fixture card internals/skills/git-workflow/SKILL.md exists exactly so this
+	// injection has a stable target that a bare clone carries.
+	corpus := fixtureMarketplaceDir(t)
 	badCorpus := t.TempDir()
 	if err := copyTree(corpus, badCorpus); err != nil {
 		t.Fatalf("copy corpus: %v", err)
@@ -352,7 +324,7 @@ func TestGenerateGateBeforePrune(t *testing.T) {
 	f.Close()
 	t.Setenv("CHARLY_DOCS_MARKETPLACE", badCorpus)
 
-	root := superprojectRoot(t)
+	root := fixtureProjectRoot(t)
 	base := t.TempDir()
 	out := filepath.Join(base, "src", "content", "docs")
 	if err := os.MkdirAll(out, 0o755); err != nil {
@@ -362,7 +334,7 @@ func TestGenerateGateBeforePrune(t *testing.T) {
 		[]byte(astroConfig()), 0o644); err != nil {
 		t.Fatalf("write astro config: %v", err)
 	}
-	seedHandAuthoredPages(t, root, out)
+	seedHandAuthoredPages(t, out)
 
 	// Seed a generated page that the prune would delete if it ran first.
 	seeded := filepath.Join(out, "seed.md")

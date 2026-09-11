@@ -1,0 +1,1 @@
+{"plugins": [{"name": "charly-internals", "source": "./internals", "description": "The fixture plugin corpus for the generator-wiring tests.", "category": "development"}]}
