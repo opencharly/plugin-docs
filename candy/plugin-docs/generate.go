@@ -40,17 +40,20 @@ func generate(root, out, pluginsDir string) error {
 	}
 	fmt.Printf("charly docs: walking %d repo root(s): %s\n", len(roots), strings.Join(namespaces, ", "))
 
-	// ONE remote-aware walk feeds both projections (R3): the candy/box projection
-	// (collectEntitiesFrom) and the candy-skill projection (collectCandySkills).
-	rawEnts, err := walkRemote(roots)
+	// ONE config-driven catalog assembly feeds both projections (R3): the docs: node from
+	// <root>/charly.yml (decoded with the generated spec.DocsConfig types) drives the unioned
+	// entity set — the compiled-in corpus (compiled_plugins list + go.mod pins, fetched via the
+	// same DownloadRepo seam the closure walk uses), the release/extra repos, and the
+	// discovered/@github local closure. Placement (compiled) comes back from the SAME assembly.
+	cfg, err := readDocsConfig(root)
+	if err != nil {
+		return err
+	}
+	rawEnts, compiled, err := assembleCatalog(root, cfg, defaultRepoResolver())
 	if err != nil {
 		return err
 	}
 	entities, err := collectEntitiesFrom(rawEnts)
-	if err != nil {
-		return err
-	}
-	compiled, err := compiledPlugins(root)
 	if err != nil {
 		return err
 	}
@@ -171,5 +174,6 @@ func generate(root, out, pluginsDir string) error {
 		skillPages, pluginPages, providerWords, cliPages, candyPages, boxPages, pruned)
 	return nil
 }
+
 // gate-before-prune: see generate.go
 // gate-before-prune: see generate.go (collectDangling before the prune)
