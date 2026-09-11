@@ -20,12 +20,72 @@ var internalLinkPattern = regexp.MustCompile(`\]\((/[^)\s"']*)\)`)
 var siteAbsoluteDeepLinkPattern = regexp.MustCompile(`\]\(https://opencharly\.ai/([^)]*)`)
 
 // rewriteSiteAbsoluteDeepLinks turns a source's absolute deep links to the site into
-// site-relative ones. On the published page an absolute self-link would leave and re-enter over
-// the network on every internal navigation, and verifySiteLinks could not check it; in the
-// SOURCE the absolute form is exactly right, because a GitHub reader has no site root to resolve
-// a relative path against.
+// site-relative ones, running the rewritten path segments through sanitizeSegment — the SAME
+// transform that named the emitted pages. On the published page an absolute self-link would
+// leave and re-enter over the network on every internal navigation, and verifySiteLinks could
+// not check it; in the SOURCE the absolute form is exactly right, because a GitHub reader has no
+// site root to resolve a relative path against.
+//
+// The emitted target must be the string the filesystem actually serves: a source link carrying
+// the raw entity identity (`github.com/opencharly/pod-sshd:v2026.239.1637`, dots, colons and
+// slashes) collides with the slug-safe page scheme unless the rewrite sanitizes the segments it
+// writes. Entity reference paths (`reference/candy|box|plugin/<namespace>/<name>`) are rebuilt
+// exactly as entity.PathSegment() names them — the namespace collapses into ONE sanitized
+// segment — and every other site path is sanitized segment-wise, which is the identity for the
+// already-safe routes (guides, concepts, recipes, reference/providers, …).
 func rewriteSiteAbsoluteDeepLinks(body string) string {
-	return siteAbsoluteDeepLinkPattern.ReplaceAllString(body, "](/$1")
+	return siteAbsoluteDeepLinkPattern.ReplaceAllStringFunc(body, func(m string) string {
+		captured := m[len("](https://opencharly.ai/"):]
+		return "](/" + sanitizeSitePathSegments(captured)
+	})
+}
+
+// sanitizeSitePathSegments maps a captured site-relative target onto the slug-safe page the
+// site serves, using the one sanitizer behind every emitted path (sanitizeSegment).
+//
+// For entity reference pages (`reference/<kind>/<…>`) the LAST segment is always the entity
+// name and every segment between the kind and it is a piece of the NAMESPACE — a fetched repo
+// key written as slash-separated path parts (`github.com/opencharly/<name>:<tag>`). Rejoining
+// the pieces with "/" and sanitizing the whole string reproduces entity.PathSegment() exactly:
+// the dots, colons AND slashes all collapse into one dash-run, matching the directory the page
+// is emitted under. Box references (`reference/box/fedora/tutorial-shell/`) go through the same
+// branch and come back byte-for-byte unchanged, because every segment is already safe (hyphen
+// replaced with hyphen is the identity).
+//
+// Every OTHER path (guides, concepts, start, recipes, reference/providers, …) is sanitized one
+// segment at a time — the identity for already-safe segments, and a defence against a future
+// source link whose path carries an unsafe byte — then reassembled. A trailing slash is
+// preserved (the form Starlight serves); a query or fragment is split off before segment
+// sanitation and re-appended verbatim.
+func sanitizeSitePathSegments(p string) string {
+	query := ""
+	if i := strings.IndexAny(p, "#?"); i >= 0 {
+		query = p[i:]
+		p = p[:i]
+	}
+	trailing := strings.HasSuffix(p, "/")
+	segs := strings.Split(strings.Trim(p, "/"), "/")
+	var out []string
+	if len(segs) >= 3 && segs[0] == "reference" &&
+		(segs[1] == "candy" || segs[1] == "box" || segs[1] == "plugin") {
+		kind, name := segs[1], segs[len(segs)-1]
+		out = append(out, "reference", kind)
+		if len(segs) > 3 {
+			out = append(out, sanitizeSegment(strings.Join(segs[2:len(segs)-1], "/")))
+		}
+		out = append(out, sanitizeSegment(name))
+	} else {
+		for _, s := range segs {
+			if s != "" {
+				out = append(out, sanitizeSegment(s))
+			}
+		}
+	}
+	res := strings.Join(out, "/")
+	if trailing {
+		res += "/"
+	}
+	return res + query
 }
 
 // frontmatterLinkPattern matches a site-absolute target in a YAML frontmatter field — the
