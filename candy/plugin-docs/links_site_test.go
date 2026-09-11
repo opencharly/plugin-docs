@@ -89,6 +89,104 @@ func TestVerifySiteLinksResolvesIndexRoutes(t *testing.T) {
 	}
 }
 
+// TestSanitizeSitePathSegments locks the landing/liberation rewrite choke onto the slug-safe
+// scheme: the emitted link target must be the string the filesystem actually serves. A source
+// link carrying the raw entity identity (dots, colons AND slashes in a fetched repo key) is
+// rebuilt exactly as entity.PathSegment() names the page — the namespace collapses into ONE
+// sanitized segment — and every already-safe route passes through byte-for-byte unchanged.
+func TestSanitizeSitePathSegments(t *testing.T) {
+	for _, tc := range []struct{ name, in, want string }{
+		{
+			// The regression that shipped on the landing page: README's "Candy reference" row
+			// links the raw identity, but the page is emitted under the sanitized directory.
+			name: "remote candy namespace collapses to one segment",
+			in:   "reference/candy/github.com/opencharly/pod-sshd:v2026.239.1637/sshd/",
+			want: "reference/candy/github-com-opencharly-pod-sshd-v2026-239-1637/sshd/",
+		},
+		{
+			// The liberation manifesto's "published example" carries the SAME old-form target:
+			// it must resolve against the SAME emitted page.
+			name: "same identity through liberation",
+			in:   "reference/candy/github.com/opencharly/pod-sshd:v2026.239.1637/sshd/",
+			want: "reference/candy/github-com-opencharly-pod-sshd-v2026-239-1637/sshd/",
+		},
+		{
+			name: "remote plugin namespace collapses",
+			in:   "reference/plugin/github.com/opencharly/plugin-check:v2026.242.2127/plugin-check/",
+			want: "reference/plugin/github-com-opencharly-plugin-check-v2026-242-2127/plugin-check/",
+		},
+		{
+			// A distro box's namespace is already safe: fedora, tutorial-shell — byte-for-byte.
+			name: "safe box reference unchanged",
+			in:   "reference/box/fedora/tutorial-shell/",
+			want: "reference/box/fedora/tutorial-shell/",
+		},
+		{
+			name: "single-segment candy unchanged",
+			in:   "reference/candy/ripgrep/",
+			want: "reference/candy/ripgrep/",
+		},
+		{
+			name: "non-entity reference path unchanged",
+			in:   "reference/providers/",
+			want: "reference/providers/",
+		},
+		{
+			name: "guide path unchanged",
+			in:   "guides/the-cli/",
+			want: "guides/the-cli/",
+		},
+		{
+			name: "concept page unchanged",
+			in:   "concepts/00-vocabulary/",
+			want: "concepts/00-vocabulary/",
+		},
+		{
+			name: "recipe card unchanged",
+			in:   "recipes/charly-check/check/",
+			want: "recipes/charly-check/check/",
+		},
+		{
+			name: "fragment split off before sanitizing segments and re-appended",
+			in:   "reference/candy/github.com/opencharly/pod-sshd:v2026.239.1637/sshd/#provenance",
+			want: "reference/candy/github-com-opencharly-pod-sshd-v2026-239-1637/sshd/#provenance",
+		},
+		{
+			name: "no trailing slash keeps no trailing slash",
+			in:   "reference/providers",
+			want: "reference/providers",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := sanitizeSitePathSegments(tc.in); got != tc.want {
+				t.Errorf("sanitizeSitePathSegments(%q):\n got: %q\nwant: %q", tc.in, got, tc.want)
+			}
+			// Same safety contract as sanitizeSegment itself: no dot or colon survives in any
+			// path segment that came from an entity identity.
+			for _, raw := range strings.Split(strings.TrimPrefix(tc.want, "reference/"), "/") {
+				seg := strings.TrimSuffix(raw, "/")
+				if seg == "" {
+					continue
+				}
+				if strings.ContainsAny(seg, ".:") && strings.Contains(tc.in, "github.com/opencharly/") {
+					t.Errorf("%s: unsafe byte in segment %q of %q", tc.name, seg, tc.want)
+				}
+			}
+		})
+	}
+}
+
+// TestRewriteSiteAbsoluteDeepLinksSanitizesTargets is the choke-level regression: the rewrite
+// that turns absolute site links into site-relative ones MUST also map old-form entity targets
+// onto the sanitized pages, or the whole-site link gate fails on the generator's own bodies.
+func TestRewriteSiteAbsoluteDeepLinksSanitizesTargets(t *testing.T) {
+	in := "Judge the work at [the proving grounds](https://opencharly.ai/reference/candy/github.com/opencharly/pod-sshd:v2026.239.1637/sshd/) and [home](https://opencharly.ai/concepts/01-the-box-is-the-boundary/)."
+	want := "Judge the work at [the proving grounds](/reference/candy/github-com-opencharly-pod-sshd-v2026-239-1637/sshd/) and [home](/concepts/01-the-box-is-the-boundary/)."
+	if got := rewriteSiteAbsoluteDeepLinks(in); got != want {
+		t.Errorf("rewriteSiteAbsoluteDeepLinks:\n got: %q\nwant: %q", got, want)
+	}
+}
+
 // TestVerifySiteLinksCoversFrontmatterLinks closes the gap round 3 flagged: a Starlight splash
 // page declares its call-to-action targets as `link:` fields in YAML frontmatter, which never
 // appear in the markdown body. Those are the most prominent links on the site, so a markdown-only

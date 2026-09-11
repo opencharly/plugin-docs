@@ -3,6 +3,7 @@ package docs
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/opencharly/sdk/candywalk"
 	"github.com/opencharly/spec/refs"
@@ -30,17 +31,51 @@ type entity struct {
 	Box        *boxView
 }
 
+// sanitizeSegment renders one path segment ASTRO-SAFE: keep lowercase ASCII letters and
+// digits, replace every other byte (a dot, a colon, an uppercase letter, …) with `-`.
+//
+// Astro strips `.` and `:` when deriving a route slug from a file name, so a segment built from
+// an entity identity — the github.com repo path of a fetched remote candy, a CalVer tag, a
+// namespaced name — would be served only at a mangled URL
+// (`githubcom/…/plugin-checkv20262422127/`) while every generated link that points at the
+// natural name 404s: 851 published URLs, measured on the live site. Making the sanitizer the
+// ONE transform behind every emitted page path AND every link target means the file name, the
+// served route and the link target are the same string by construction.
+//
+// The function is by design not idempotent-safe in the sense of a hash: a segment that already
+// contains only lowercase alphanumerics is returned byte-for-byte unchanged, so the safe
+// namespaces (arch, cachyos, fedora, plugin-check, …) are untouched. A hyphen is itself
+// replaced with a hyphen, which is the identity, so every already-safe segment survives.
+func sanitizeSegment(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') {
+			b.WriteByte(c)
+		} else {
+			b.WriteByte('-')
+		}
+	}
+	return b.String()
+}
+
 // PathSegment is the entity's stable page path — namespaced by DIRECTORY so a submodule box
 // cannot collide with a superproject candy of the same name.
 //
 // The separator is a slash rather than a dot because Astro strips dots when deriving a route
 // slug: a `fedora.check-pod.md` file would be served at `/fedoracheck-pod/`, which is both ugly
 // and a collision waiting to happen. A directory keeps `fedora/check-pod` intact.
+//
+// Both parts pass through sanitizeSegment, so the returned segment is what the file system
+// sees AND what every link points at — a raw identity (a repo path, a CalVer tag) can never
+// leak a dot or a colon into a page's directory or file name. The unsanitized identity stays
+// available for display and sorting (Namespace/Name/Slug are untouched).
 func (e entity) PathSegment() string {
 	if e.Namespace == "" {
-		return e.Name
+		return sanitizeSegment(e.Name)
 	}
-	return e.Namespace + "/" + e.Name
+	return sanitizeSegment(e.Namespace) + "/" + sanitizeSegment(e.Name)
 }
 
 // Slug is the entity's display name, namespace-qualified.

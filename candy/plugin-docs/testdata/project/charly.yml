@@ -1,0 +1,11 @@
+# Hermetic generate root for the generator-wiring tests (bare-clone green, R2).
+#
+# A MINIMAL charly project: the ONE docs-site generation config node with the compiled-in
+# corpus DISABLED and no release/extra repos, so the catalog assembly walks only this tree
+# and performs zero fetches — no network, no external charly/marketplace checkout. The shape
+# mirrors the docs: node TestGenerateRegenNoOp builds in-memory (catalog_test.go).
+docs:
+    docs:
+        sources:
+            compiled:
+                enabled: false
