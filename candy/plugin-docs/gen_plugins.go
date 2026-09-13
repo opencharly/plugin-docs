@@ -181,7 +181,16 @@ func generateProviderIndex(outRoot string, plugins []pluginEntity) (int, error) 
 		if rows[i].class != rows[j].class {
 			return rows[i].class < rows[j].class
 		}
-		return rows[i].word < rows[j].word
+		if rows[i].word != rows[j].word {
+			return rows[i].word < rows[j].word
+		}
+		// A word can be served by more than one plugin candy — the corpus deliberately
+		// documents every DEFINED version, so `deploy` is served by two plugin-fleet
+		// versions at once. Without this tiebreaker the relative order of those rows falls
+		// back to the walk order, which shifts whenever ANY corpus pin changes and
+		// reshuffles the whole page. `page` is unique per plugin entity, so keying on it
+		// makes the output a pure function of the entity set (deterministic, R3/R4).
+		return rows[i].page < rows[j].page
 	})
 
 	// The census is computed here, never transcribed: the three numbers are derived from the same
