@@ -47,7 +47,12 @@ func generateCLI(outRoot string, plugins []pluginEntity) (int, error) {
 	}
 	var cmds []cmd
 	for word, owners := range byWord {
-		sort.Slice(owners, func(i, j int) bool { return owners[i].Name < owners[j].Name })
+		sort.Slice(owners, func(i, j int) bool {
+			if owners[i].Name != owners[j].Name {
+				return owners[i].Name < owners[j].Name
+			}
+			return owners[i].PathSegment() < owners[j].PathSegment()
+		})
 		cmds = append(cmds, cmd{word: word, owners: owners})
 	}
 	sort.Slice(cmds, func(i, j int) bool { return cmds[i].word < cmds[j].word })
