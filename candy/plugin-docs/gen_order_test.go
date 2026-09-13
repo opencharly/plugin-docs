@@ -63,8 +63,8 @@ func TestAggregateEmittersOrderIndependent(t *testing.T) {
 }
 
 // TestGenerateRecipesIndexOrderIndependent extends the same property to the recipe index: two
-// marketplace plugins sharing a Name (different Dir) and two cards sharing a Name (different
-// PluginDir) are ties, and the emitted recipes/index.md must not depend on their input order.
+// marketplace plugins sharing a Name (different Dir) are a tie in writeBucket's plugin sort, and
+// the emitted recipes/index.md must not depend on their input order.
 func TestGenerateRecipesIndexOrderIndependent(t *testing.T) {
 	a := marketplacePlugin{Name: "charly-internals", Source: "./internals", Category: "development", Description: "a"}
 	b := marketplacePlugin{Name: "charly-internals", Source: "./internals-extra", Category: "development", Description: "b"}
