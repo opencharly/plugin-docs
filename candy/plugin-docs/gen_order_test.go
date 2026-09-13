@@ -61,3 +61,31 @@ func TestAggregateEmittersOrderIndependent(t *testing.T) {
 		t.Errorf("reference/cli/deploy.md depends on walk order:\n--- order1\n%s\n--- order2\n%s", cli1, cli2)
 	}
 }
+
+// TestGenerateRecipesIndexOrderIndependent extends the same property to the recipe index: two
+// marketplace plugins sharing a Name (different Dir) and two cards sharing a Name (different
+// PluginDir) are ties, and the emitted recipes/index.md must not depend on their input order.
+func TestGenerateRecipesIndexOrderIndependent(t *testing.T) {
+	a := marketplacePlugin{Name: "charly-internals", Source: "./internals", Category: "development", Description: "a"}
+	b := marketplacePlugin{Name: "charly-internals", Source: "./internals-extra", Category: "development", Description: "b"}
+	sa := skill{PluginDir: "internals", PluginName: "charly-internals", Name: "skills", Title: "Skills"}
+	sb := skill{PluginDir: "internals-extra", PluginName: "charly-internals", Name: "skills", Title: "Skills extra"}
+
+	emit := func(m *marketplace, skills []skill) string {
+		dir := t.TempDir()
+		if err := generateRecipesIndex(dir, skills, m); err != nil {
+			t.Fatalf("generateRecipesIndex: %v", err)
+		}
+		raw, err := os.ReadFile(filepath.Join(dir, "recipes", "index.md"))
+		if err != nil {
+			t.Fatalf("read recipes/index.md: %v", err)
+		}
+		return string(raw)
+	}
+
+	got1 := emit(&marketplace{Plugins: []marketplacePlugin{a, b}}, []skill{sa, sb})
+	got2 := emit(&marketplace{Plugins: []marketplacePlugin{b, a}}, []skill{sb, sa}) // reversed walk order
+	if got1 != got2 {
+		t.Errorf("recipes/index.md depends on walk order:\n--- order1\n%s\n--- order2\n%s", got1, got2)
+	}
+}
