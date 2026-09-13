@@ -79,12 +79,9 @@ func writeBucket(b *strings.Builder, cat string, plugins []marketplacePlugin, by
 		if d := strings.TrimSpace(firstLine(p.Description)); d != "" {
 			fmt.Fprintf(b, "%s\n\n", d)
 		}
-		sort.Slice(cards, func(i, j int) bool {
-			if cards[i].Name != cards[j].Name {
-				return cards[i].Name < cards[j].Name
-			}
-			return skillSitePath(cards[i]) < skillSitePath(cards[j])
-		})
+		// Within one plugin dir, skill names are unique (one card per skill, one dir per
+		// skill), so sorting by Name alone is already a total order — no tiebreaker needed.
+		sort.Slice(cards, func(i, j int) bool { return cards[i].Name < cards[j].Name })
 		for _, c := range cards {
 			fmt.Fprintf(b, "- [%s](%s)\n", c.Title, skillSitePath(c))
 		}
