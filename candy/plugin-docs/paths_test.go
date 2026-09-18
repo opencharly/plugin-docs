@@ -67,7 +67,7 @@ func TestSanitizeSegment(t *testing.T) {
 			}
 			// The output must never carry a byte Astro would strip or mangle.
 			for _, b := range []byte(tc.want) {
-				if !(b >= 'a' && b <= 'z' || b >= '0' && b <= '9' || b == '-') {
+				if (b < 'a' || b > 'z') && (b < '0' || b > '9') && b != '-' {
 					t.Errorf("sanitizeSegment(%q) = %q contains unsafe byte %q", tc.in, tc.want, b)
 				}
 			}
@@ -89,7 +89,7 @@ func assertSlugSafe(t *testing.T, what string, parts ...string) {
 				continue
 			}
 			for _, b := range []byte(seg) {
-				if !(b >= 'a' && b <= 'z' || b >= '0' && b <= '9' || b == '-') {
+				if (b < 'a' || b > 'z') && (b < '0' || b > '9') && b != '-' {
 					t.Errorf("%s: unsafe byte %q in segment %q of %q", what, b, seg, p)
 				}
 			}
@@ -158,7 +158,7 @@ func TestPathCoherenceSlugSafe(t *testing.T) {
 	// Slug is the namespace-qualified DISPLAY name and is deliberately never sanitized: it is
 	// the entity's identity (used for sorting and display), not a path segment. Its dots and
 	// colons surviving proves the sanitizer did not touch identity, only paths.
-	if got := remote.entity.Slug(); got != "github.com/opencharly/plugin-check:v2026.242.2127.plugin-check" {
+	if got := remote.Slug(); got != "github.com/opencharly/plugin-check:v2026.242.2127.plugin-check" {
 		t.Errorf("Slug() = %q, want the unsanitized namespace-qualified name (display identity)", got)
 	}
 	if got := remote.Version(); got != "2026.242.2127" {
