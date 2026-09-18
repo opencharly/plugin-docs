@@ -4,6 +4,7 @@
 # corpus DISABLED and no release/extra repos, so the catalog assembly walks only this tree
 # and performs zero fetches — no network, no external charly/marketplace checkout. The shape
 # mirrors the docs: node TestGenerateRegenNoOp builds in-memory (catalog_test.go).
+version: 2026.249.2125
 docs:
     docs:
         sources:
