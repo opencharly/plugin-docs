@@ -52,3 +52,51 @@ func TestCollectCandySkills_ProjectsMovedCandySkill(t *testing.T) {
 	}
 	t.Logf("projected %d candy skills incl. ripgrep (family=tools)", len(skills))
 }
+
+// TestDedupeSkills_CorpusWinsAndWalkFillsGaps is the R10 gate for the recipes-index dedupe.
+// The corpus read and the candy walk project the SAME skill entities once the marketplace has
+// been regenerated, and the walk visits a candy more than once; appending them unfiltered made
+// recipes/index.md list one card 2-3 times. FAILS without dedupeSkills: the merged slice carries
+// one entry per source occurrence instead of one per skillKey.
+func TestDedupeSkills_CorpusWinsAndWalkFillsGaps(t *testing.T) {
+	corpus := []skill{
+		{PluginDir: "tools", Name: "ripgrep", Body: "corpus-body"},
+		{PluginDir: "tools", Name: "yay", Body: "corpus-yay"},
+	}
+	walked := []skill{
+		{PluginDir: "tools", Name: "ripgrep", Body: "walked-body"},       // duplicate of corpus
+		{PluginDir: "tools", Name: "ripgrep", Body: "walked-body-again"}, // duplicate of the duplicate
+		{PluginDir: "tools", Name: "goplaces", Body: "walked-only"},      // gap the walk fills
+	}
+	got := dedupeSkills(corpus, walked)
+
+	// One entry per skillKey.
+	seen := map[string]int{}
+	for _, s := range got {
+		seen[skillKey(s)]++
+	}
+	for k, n := range seen {
+		if n != 1 {
+			t.Errorf("skillKey %q appears %d times, want 1", k, n)
+		}
+	}
+	if len(got) != 3 {
+		t.Fatalf("want 3 distinct skills (ripgrep, yay, goplaces), got %d", len(got))
+	}
+	// The corpus copy wins over the walked copy.
+	for _, s := range got {
+		if s.Name == "ripgrep" && s.Body != "corpus-body" {
+			t.Errorf("corpus must win for a duplicate skill; got body %q", s.Body)
+		}
+	}
+	// The walk's unique contribution survives.
+	found := false
+	for _, s := range got {
+		if s.Name == "goplaces" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("the walk's corpus-absent skill (goplaces) must survive the merge")
+	}
+}

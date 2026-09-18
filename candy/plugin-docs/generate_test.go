@@ -89,14 +89,6 @@ func fileExists(p string) bool {
 	return err == nil
 }
 
-func copyFile(src, dst string) error {
-	b, err := os.ReadFile(src)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(dst, b, 0o644)
-}
-
 // fixtureProjectRoot returns the hermetic generate root: testdata/project, a MINIMAL
 // self-contained charly project. Its charly.yml carries a docs: node with the compiled-in corpus
 // DISABLED and no release/extra repos, so the catalog assembly (assembleCatalog) walks only the
@@ -321,7 +313,9 @@ func TestGenerateGateBeforePrune(t *testing.T) {
 	if _, err := f.WriteString("\nSee /charly-nonexistent:fake-skill for details.\n"); err != nil {
 		t.Fatalf("inject bad reference: %v", err)
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		t.Fatalf("close injected skill: %v", err)
+	}
 	t.Setenv("CHARLY_DOCS_MARKETPLACE", badCorpus)
 
 	root := fixtureProjectRoot(t)

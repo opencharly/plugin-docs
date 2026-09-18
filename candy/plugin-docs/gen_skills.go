@@ -247,6 +247,35 @@ func skillPagePath(s skill) string {
 	return fmt.Sprintf("recipes/%s/%s.md", s.PluginDir, s.Name)
 }
 
+// skillKey is a skill's identity: family dir + name. It matches skillPagePath's two segments,
+// so one key == one emitted card — the unit a dedupe must preserve.
+func skillKey(s skill) string { return s.PluginDir + "/" + s.Name }
+
+// dedupeSkills merges the corpus skills with the walked candy-pickup, keeping the FIRST
+// occurrence per skillKey. The corpus read is first (authoritative: it is the published
+// projection the marketplace regeneration produces), so a skill the corpus already carries is
+// not overridden by a walked copy. The walk contributes only what the corpus lacks — a moved
+// candy whose marketplace regeneration has not landed yet, its raison d'être.
+//
+// Without this, the same skill reached the recipes index 2–3 times (the corpus read and each
+// duplicate walk visit), producing repeated bullets for one card (R3). generateSkills wrote one
+// file per path either way, so the defect was visible only in the index listing.
+func dedupeSkills(corpus, walked []skill) []skill {
+	seen := make(map[string]bool, len(corpus)+len(walked))
+	out := make([]skill, 0, len(corpus)+len(walked))
+	for _, group := range [][]skill{corpus, walked} {
+		for _, s := range group {
+			k := skillKey(s)
+			if seen[k] {
+				continue
+			}
+			seen[k] = true
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
 // skillSitePath is the URL Starlight serves that card at.
 func skillSitePath(s skill) string {
 	return fmt.Sprintf("/recipes/%s/%s/", s.PluginDir, s.Name)
