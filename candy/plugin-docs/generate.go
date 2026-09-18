@@ -79,7 +79,16 @@ func generate(root, out, pluginsDir string) error {
 	// `charly marketplace generate` regenerates it — without this a moved candy's skill
 	// reference dangles, the R1 divergence the Phase-3 RDD surfaced). The projection mirrors
 	// plugin-marketplace's emit_skills.go.
-	skills = append(skills, collectCandySkills(rawEnts)...)
+	//
+	// DEDUPE (R3): the corpus read and the candy walk project the SAME skill entities once the
+	// marketplace has been regenerated, and the walk itself visits a candy more than once (the
+	// superproject plus each box/<distro> closure that references it). Appending without a key
+	// check therefore fed the SAME card to generateSkills and generateRecipesIndex many times —
+	// writing one page per key (idempotent) but LISTING it once per duplicate in recipes/index.md
+	// (2–3 bullets for one card). The corpus is authoritative for a skill it already carries
+	// (it is the published projection); the walk only contributes skills the corpus lacks (a
+	// moved candy whose regeneration has not landed), which is exactly its stated purpose.
+	skills = dedupeSkills(skills, collectCandySkills(rawEnts))
 	resolver := buildResolver(skills, market)
 
 	// The cross-reference gate runs BEFORE the prune: a refused run (an unresolvable
