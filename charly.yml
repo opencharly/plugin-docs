@@ -7,8 +7,92 @@
 #
 # Declaring discover: is the whole fix: the candy is scanned, the CUE schema gate
 # applies, and the STOCK `charly box validate` step starts working with no workflow
-# change. This file declares no entities of its own - it only tells charly where to look.
-version: 2026.249.2125
+# change. This file also declares the R10 witness bed (below).
+version: 2026.261.1747
 discover:
     - path: candy
       recursive: true
+
+# =============================================================================
+# docs-resolve-app / docs-resolve — the R10 witness for the docs generator's
+# extra_repos/release_repos RESOLUTION path (candy/plugin-docs catalog.go →
+# refs.GitLatestTag, from the pinned github.com/opencharly/spec).
+#
+# WHY THIS BED EXISTS. The generator resolves a repo named in `extra_repos` to
+# its newest CalVer tag via refs.GitLatestTag. A repo mid-migration carries BOTH
+# the plain CalVer tags (v<YYYY>.<DDD>.<HHMM>) and the Go-module tags
+# (v0.<YYYYDDD>.<HHMM>) the proxy-consumed root-module repos require; the pinned
+# spec must rank the NEWER Go-form tag above a STALE plain tag, or the generated
+# page freezes at the old plain tag (the defect that pinned plugin-gh to
+# v2026.252.1501). This bed exercises that resolution END-TO-END on a
+# disposable target: it composes THIS checkout's candy and runs `charly docs
+# generate` over a hermetic fixture whose project declares extra_repos:
+# [plugin-gh] — so the changed resolver path actually executes — then asserts the
+# generated page is keyed by the Go-form tag.
+#
+# The fixture (candy/plugin-docs/testdata/bed-fixture) is self-contained and
+# INTERNALLY CONSISTENT (its own project + narrative sources + hand-authored pages
+# + astro config + the candy's testdata/marketplace corpus), so the generate
+# reaches its link gates and passes — proving resolution against the REAL remote
+# tags, not a stub.
+# =============================================================================
+docs-resolve-app:
+    local:
+        description: |-
+            Minimal kind:local template for the docs-resolve bed — composes the local
+            plugin-docs candy (no install content) so the bed exercises the generator's
+            extra_repos resolution on a disposable host:local target.
+        candy:
+            - plugin-docs
+docs-resolve:
+    local:
+        from: docs-resolve-app
+        host: local
+        disposable: true
+        lifecycle: dev
+        description: >-
+            R10 witness for the docs generator's extra_repos/release_repos resolution (candy/plugin-docs catalog.go → refs.GitLatestTag). Stages the hermetic fixture, runs `charly docs generate` (the out-of-process command:docs plugin built from THIS checkout) against a project declaring `extra_repos: [plugin-gh]`, then asserts the generated plugin-gh page is keyed by the Go-module tag FORM (v0.<YYYYDDD>.<HHMM> → the page dir `...-v0-...`) — the resolution a stale plain tag (v<YYYY>.<DDD>.<HHMM> → `...-v2026-...`) would break. The assertion is FORM-based, not a pinned tag literal, so it stays green as plugin-gh advances and red exactly on the regression.
+        plan:
+            - check: stage the hermetic fixture into a scratch site and run charly docs generate (the composed command:docs plugin) against a project with extra_repos [plugin-gh]
+              id: docs-resolve-generate
+              exit_status: 0
+              context:
+                - runtime
+              command:
+                in_container: false
+                command: |
+                    set -eu
+                    FIX=candy/plugin-docs/testdata/bed-fixture
+                    SITE=/tmp/docs-resolve-site
+                    rm -rf "$SITE"
+                    mkdir -p "$SITE/src/content/docs/start"
+                    cp "$FIX/astro.config.mjs" "$SITE/astro.config.mjs"
+                    cp "$FIX"/site/start/*.md "$SITE/src/content/docs/start/"
+                    ${CHARLY_BIN} docs generate \
+                      --root "$FIX/project" \
+                      --plugins candy/plugin-docs/testdata/marketplace \
+                      --out "$SITE/src/content/docs"
+            - check: the generated plugin-gh page is keyed by a Go-module tag (v0.<YYYYDDD>.<HHMM>), NOT the stale plain tag
+              id: docs-resolve-tag
+              exit_status: 0
+              context:
+                - runtime
+              stdout:
+                - matches: 'plugin-gh-v0-\d{7}-\d+'
+              command:
+                in_container: false
+                command: |
+                    set -eu
+                    DIR=/tmp/docs-resolve-site/src/content/docs/reference/plugin
+                    # The Go-module form resolves to a dir like
+                    # github-com-opencharly-plugin-gh-v0-2026267-723; the stale plain
+                    # form would be ...-v2026-252-1501. Assert the Go form is present
+                    # and the stale plain form is ABSENT.
+                    if [ ! -d "$DIR" ]; then echo "no reference/plugin dir"; exit 1; fi
+                    if ! ls "$DIR" | grep -Eq 'plugin-gh-v0-[0-9]{7}-[0-9]+'; then
+                      echo "no Go-module-tag plugin-gh page; got:"; ls "$DIR" | grep plugin-gh || true; exit 1
+                    fi
+                    if ls "$DIR" | grep -Eq 'plugin-gh-v2026-.+'; then
+                      echo "STALE plain-tag plugin-gh page present:"; ls "$DIR" | grep plugin-gh; exit 1
+                    fi
+                    ls "$DIR" | grep -E 'plugin-gh-v0-[0-9]{7}-[0-9]+'
