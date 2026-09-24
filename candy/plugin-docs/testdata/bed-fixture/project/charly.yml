@@ -1,0 +1,22 @@
+# Hermetic generate root for the docs-resolve R10 bed
+# (candy/plugin-docs/testdata/bed-fixture).
+#
+# A MINIMAL charly project whose ONE docs-site generation config node DISABLES the
+# compiled-in corpus and declares `extra_repos: [plugin-gh]`. Declaring an extra
+# repo is the POINT of this fixture: the generator's resolver (catalog.go →
+# refs.GitLatestTag, from the pinned spec) must resolve that repo to its newest
+# CalVer tag, so the catalog assembly DOES reach the network to resolve plugin-gh's
+# tags and fetch the resolved ref — the changed path under test.
+#
+# The fixture is otherwise self-contained and internally consistent (its own
+# narrative sources + hand-authored pages + the candy's testdata/marketplace
+# corpus), so the generate run reaches its cross-reference and link gates and
+# passes; its page key then proves the resolver ranked the newer Go-module tag
+# over a stale plain tag.
+version: 2026.249.2125
+docs:
+    docs:
+        sources:
+            compiled:
+                enabled: false
+            extra_repos: [plugin-gh]
