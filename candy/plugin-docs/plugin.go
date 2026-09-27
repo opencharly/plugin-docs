@@ -26,12 +26,16 @@ package docs
 
 import (
 	"context"
+	"embed"
 	"encoding/json"
 	"fmt"
 
 	"github.com/opencharly/sdk"
 	pb "github.com/opencharly/spec/proto"
 )
+
+//go:embed schema/*.cue
+var schemaFS embed.FS
 
 // calver is the candy's identity CalVer (advertised over Describe).
 const calver = "2026.215.1140"
@@ -40,13 +44,15 @@ const calver = "2026.215.1140"
 // registration, were the plugin ever listed in compiled_plugins).
 func NewProvider() pb.ProviderServer { return &provider{} }
 
-// NewMeta advertises command:docs via sdk.NewMeta → BuildCapabilities. A command's args are
-// pass-through CLI tokens, not a structured plugin_input, so the capability carries no InputDef
-// and the plugin ships no CUE schema (the candy/plugin-alias precedent).
+// NewMeta advertises command:docs via sdk.NewMeta → BuildCapabilities — together with this
+// plugin's OWN self-contained CUE schema (schema/docs.cue) served over Describe. There is NO
+// schema-less plugin: the schema is the uniform surface every plugin presents, even where a
+// command's args are pass-through CLI tokens rather than a structured plugin_input (so the
+// capability carries no InputDef).
 func NewMeta() pb.PluginMetaServer {
 	return sdk.NewMeta(calver,
 		[]sdk.ProvidedCapability{{Class: "command", Word: "docs"}},
-		nil)
+		schemaFS)
 }
 
 // CliMain is the OUT-OF-PROCESS command entry — the placement this plugin actually ships in.
