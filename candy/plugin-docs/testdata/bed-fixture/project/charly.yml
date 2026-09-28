@@ -13,7 +13,6 @@
 # corpus), so the generate run reaches its cross-reference and link gates and
 # passes; its page key then proves the resolver ranked the newer Go-module tag
 # over a stale plain tag.
-version: 2026.249.2125
 docs:
     docs:
         sources:
