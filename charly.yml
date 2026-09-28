@@ -8,7 +8,6 @@
 # Declaring discover: is the whole fix: the candy is scanned, the CUE schema gate
 # applies, and the STOCK `charly box validate` step starts working with no workflow
 # change. This file also declares the R10 witness bed (below).
-version: 2026.249.2125
 discover:
     - path: candy
       recursive: true
