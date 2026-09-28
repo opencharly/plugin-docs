@@ -1,7 +1,5 @@
-version: 2026.232.0520
 plugin-docs:
     candy:
-        version: 2026.215.1140
         description: |-
             RUNTIME (out-of-process) charly plugin serving `charly docs …` — the generator that
             renders the reference half of the opencharly.ai documentation site from this repo's
