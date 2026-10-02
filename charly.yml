@@ -13,7 +13,7 @@ discover:
       recursive: true
 
 # =============================================================================
-# docs-resolve-app / docs-resolve — the R10 witness for TWO generator paths, both
+# docs-resolve-app / docs-resolve — the R10 witness for THREE generator paths, all
 # reached by the one `charly docs generate` this bed runs.
 #
 # WHY THIS BED EXISTS (1) — the extra_repos/release_repos RESOLUTION path
@@ -38,6 +38,20 @@ discover:
 # hard-fail ("no tagline found") — so the third step asserts the tagline is lifted
 # from UNDER the badges, the badges are kept in the body, and the tagline is not
 # also left behind in it.
+#
+# WHY THIS BED EXISTS (3) — the CLI PAGE-PATH sanitizer (gen_cli.go →
+# sanitizeSegment). Every other page-path producer sanitized its segment; the CLI
+# emitter wrote the command word raw, so a `noun:verb` word (twelve of them live
+# under `box` alone) landed at `reference/cli/build:box.md` while every link
+# target — which DOES sanitize each segment — pointed at
+# `/reference/cli/build-box/`. Nineteen such pages were committed to the docs repo
+# before this bed caught it. The fixture therefore resolves plugin-box (whose candy
+# declares those twelve words) through `extra_repos`, and its hand-authored start
+# page links to one of them at the SANITIZED spelling: the page path the emitter
+# writes and the link target the site resolves must agree, so the fixture's own
+# link gate goes red on the raw-path regression and green once the emitter
+# sanitizes. It is red-then-green through the existing gate, and the fourth step
+# below asserts the page-path pair directly so the failure names itself.
 #
 # The fixture (candy/plugin-docs/testdata/bed-fixture) is self-contained and
 # INTERNALLY CONSISTENT (its own project + narrative sources + hand-authored pages
@@ -133,3 +147,31 @@ docs-resolve:
                       echo "tagline left in the body as well as in the frontmatter"; exit 1
                     fi
                     echo "tagline lifted from under the badges; both badges kept"
+            - check: the CLI page path for a colon-carrying command word is the SANITIZED form, and no raw-colon page is written
+              id: docs-resolve-cli-slug
+              exit_status: 0
+              context:
+                - runtime
+              stdout:
+                - matches: 'build-box\.md'
+              command:
+                in_container: false
+                command: |
+                    set -eu
+                    # plugin-box declares twelve colon-carrying `command:<verb>:box` words,
+                    # and the fixture's hand-authored start page links to one of them at the
+                    # SANITIZED spelling. The generate step above already exited 0, which
+                    # means that link RESOLVED: the emitter wrote the page at the path the
+                    # link sanitizer produces. This step names the pair, so a regression
+                    # fails with both paths in hand rather than only a link error.
+                    DIR=/tmp/docs-resolve-site/src/content/docs/reference/cli
+                    [ -d "$DIR" ] || { echo "no reference/cli dir"; exit 1; }
+                    if ls "$DIR" | grep -q ':'; then
+                      echo "the emitter wrote a RAW colon page name:"; ls "$DIR" | grep ':'; exit 1
+                    fi
+                    [ -f "$DIR/build-box.md" ] || {
+                      echo "expected the sanitized page reference/cli/build-box.md; got:"; ls "$DIR"; exit 1; }
+                    # The word keeps its RAW spelling in the page — only the PATH is sanitized.
+                    grep -qF 'build:box' "$DIR/build-box.md" || {
+                      echo "the sanitized page lost the word's raw spelling"; exit 1; }
+                    ls "$DIR" | grep -F 'build-box.md'

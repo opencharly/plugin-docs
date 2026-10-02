@@ -2,11 +2,18 @@
 # (candy/plugin-docs/testdata/bed-fixture).
 #
 # A MINIMAL charly project whose ONE docs-site generation config node DISABLES the
-# compiled-in corpus and declares `extra_repos: [plugin-gh]`. Declaring an extra
-# repo is the POINT of this fixture: the generator's resolver (catalog.go →
-# refs.GitLatestTag, from the pinned spec) must resolve that repo to its newest
-# CalVer tag, so the catalog assembly DOES reach the network to resolve plugin-gh's
-# tags and fetch the resolved ref — the changed path under test.
+# compiled-in corpus and declares two `extra_repos`. Declaring extra repos is the
+# POINT of this fixture: the generator's resolver (catalog.go → refs.GitLatestTag,
+# from the pinned spec) must resolve them to their newest CalVer tags, so the
+# catalog assembly DOES reach the network to resolve their tags and fetch the
+# resolved refs — the changed paths under test.
+#
+#   plugin-gh   — resolves to a Go-module tag form (v0.<YYYYDDD>.<HHMM>), which is
+#                 what the tag-resolution assertion keys on.
+#   plugin-box  — declares twelve `command:<verb>:box` words, i.e. the
+#                 colon-carrying `noun:verb` form the CLI page-path sanitizer is
+#                 about. A fixture with no such word does not exercise that path
+#                 at all, so the sanitizer would be unwitnessed.
 #
 # The fixture is otherwise self-contained and internally consistent (its own
 # narrative sources + hand-authored pages + the candy's testdata/marketplace
@@ -18,4 +25,4 @@ docs:
         sources:
             compiled:
                 enabled: false
-            extra_repos: [plugin-gh]
+            extra_repos: [plugin-gh, plugin-box]
