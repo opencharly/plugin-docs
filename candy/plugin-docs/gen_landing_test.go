@@ -101,6 +101,89 @@ func TestRewriteLandingLinksLeavesForeignLinksAlone(t *testing.T) {
 	}
 }
 
+// TestLiftLandingTaglineSkipsBadges is the charly#750 regression: the README's hero may carry badge
+// images between the H1 and the tagline, and the projection must find the tagline anyway. The
+// fixture is the real shape measured on charly main (two badges, a blank line, the tagline).
+func TestLiftLandingTaglineSkipsBadges(t *testing.T) {
+	body := strings.Join([]string{
+		"[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/opencharly/charly)",
+		"[![Docs](https://img.shields.io/badge/docs-opencharly.ai-blue)](https://opencharly.ai)",
+		"",
+		"**A deliberately unusual tagline.**",
+		"",
+		"**A bold-opening paragraph.** It follows the tagline.",
+		"",
+	}, "\n")
+
+	tagline, rest, err := liftLandingTagline(body)
+	if err != nil {
+		t.Fatalf("liftLandingTagline with badge lines above the tagline: %v", err)
+	}
+	if tagline != "A deliberately unusual tagline." {
+		t.Errorf("tagline = %q, want the line after the badges", tagline)
+	}
+	// The badges are README content, not chrome: the projection drops ONLY the tagline.
+	if !strings.Contains(rest, "![Ask DeepWiki]") || !strings.Contains(rest, "![Docs]") {
+		t.Errorf("the badge lines were dropped from the body: %q", rest)
+	}
+	if strings.Contains(rest, "A deliberately unusual tagline.") {
+		t.Errorf("the tagline must be lifted OUT of the body: %q", rest)
+	}
+	if !strings.Contains(rest, "**A bold-opening paragraph.**") {
+		t.Errorf("the paragraph after the tagline was lost: %q", rest)
+	}
+}
+
+// TestLiftLandingTaglineStillRefusesALaterBoldLine keeps the position-anchoring the badge scan
+// could have weakened: stepping over badges must NOT become a search for the first bold run in the
+// document. Here a badge is followed by prose and only THEN by a bold-only line — hoisting that
+// line into the hero would delete real prose from the home page, so it stays an error.
+func TestLiftLandingTaglineStillRefusesALaterBoldLine(t *testing.T) {
+	body := "[![badge](https://example.com/b.svg)](https://example.com)\n\n" +
+		"Straight into prose.\n\n**Not the tagline.**\n\nMore prose.\n"
+
+	if _, _, err := liftLandingTagline(body); err == nil {
+		t.Fatal("a bold-only line BELOW the hero's first content line must not be lifted into the hero, got no error")
+	}
+}
+
+// TestGenerateLandingProjectsReadmeWithBadges is the end-to-end half: with badges in the hero the
+// page is emitted, the hero carries the README's tagline, and the README's decoration survives.
+func TestGenerateLandingProjectsReadmeWithBadges(t *testing.T) {
+	root := writeTree(t, map[string]string{
+		"README.md": strings.Join([]string{
+			"# OpenCharly",
+			"",
+			"[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/opencharly/charly)",
+			"",
+			"**A deliberately unusual tagline.**",
+			"",
+			"Compose boxes from candies.",
+			"",
+		}, "\n"),
+	})
+	out := t.TempDir()
+
+	if err := generateLanding(root, out); err != nil {
+		t.Fatalf("generateLanding with a badge in the hero: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(out, "index.md"))
+	if err != nil {
+		t.Fatalf("read emitted index.md: %v", err)
+	}
+	got := string(raw)
+
+	if !strings.Contains(got, `tagline: "A deliberately unusual tagline."`) {
+		t.Errorf("the tagline was not lifted into the hero:\n%s", got)
+	}
+	if !strings.Contains(got, "![Ask DeepWiki]") {
+		t.Errorf("the README's badge was dropped from the page:\n%s", got)
+	}
+	if !strings.Contains(got, "Compose boxes from candies.") {
+		t.Errorf("the README body was not projected:\n%s", got)
+	}
+}
+
 // TestGenerateLandingProjectsReadme covers the whole projection: the README's H1 and tagline are
 // dropped (Starlight renders the frontmatter title, and the hero already prints the tagline), the
 // site frontmatter is prepended, the generated-file header is emitted so the page is prunable, and

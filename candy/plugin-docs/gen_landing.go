@@ -56,15 +56,15 @@ func generateLanding(root, out string) error {
 	return nil
 }
 
-// landingTaglinePattern matches the tagline: the line directly after the H1, consisting of one bold
-// run and nothing else.
+// landingTaglinePattern matches the tagline: one bold run and nothing else, followed by a blank line.
 //
 // Both halves of that description are load-bearing, and each rules out a different wrong match.
 //
-// It is POSITION-anchored (\A, applied once the H1 is already stripped) rather than a search for
-// the first bold run in the document, because the README's next paragraph also opens in bold. A
-// first-match search would pick the right line today and silently pick the bridge paragraph the
-// moment the two are reordered — hoisting a paragraph into the hero and deleting it from the body.
+// It is POSITION-anchored (\A, applied once the H1 — and any badge lines under it, see
+// liftLandingTagline — are stripped) rather than a search for the first bold run in the document,
+// because the README's next paragraph also opens in bold. A first-match search would pick the right
+// line today and silently pick the bridge paragraph the moment the two are reordered — hoisting a
+// paragraph into the hero and deleting it from the body.
 //
 // It also requires the bold run to span the WHOLE line and contain no further emphasis
 // ([^*\n]+), which is what separates a tagline from a paragraph that merely starts bold.
@@ -74,18 +74,51 @@ func generateLanding(root, out string) error {
 // inoperative and printed the new sentence twice on the home page.
 var landingTaglinePattern = regexp.MustCompile(`\A\*\*([^*\n]+)\*\*\n\n`)
 
+// landingBadgeLinePattern matches a hero BADGE line: an image alone on its line, as a markdown
+// image (optionally wrapped in a link — the shields.io/DeepWiki idiom) or as HTML.
+//
+// Badges are the ONE thing that legitimately sits between the H1 and the tagline, so they are
+// stepped over rather than treated as the tagline. Anchoring to the line after the H1 made the
+// projection hostage to the hero's decoration: charly#750 put two badges above the tagline and the
+// generator — whose only symptom is "no tagline found" — hard-failed on a README that plainly has
+// one.
+var landingBadgeLinePattern = regexp.MustCompile(`^(?:\[!\[[^\]]*\]\([^)]*\)\]\([^)]*\)|!\[[^\]]*\]\([^)]*\)|<img\b[^>]*/?>|<a\b[^>]*>\s*<img\b[^>]*/?>\s*</a>)[ \t]*\n`)
+
+// splitLandingBadges returns the leading badge lines (with the blank lines around them) and the
+// rest of the document. The returned halves concatenate back to the input, so the badges are kept
+// where the README put them: the projection drops ONLY the tagline, which the hero already renders.
+func splitLandingBadges(body string) (prefix, rest string) {
+	rest = body
+	for {
+		trimmed := strings.TrimLeft(rest, "\n")
+		loc := landingBadgeLinePattern.FindStringIndex(trimmed)
+		if loc == nil || loc[0] != 0 {
+			return body[:len(body)-len(trimmed)], trimmed
+		}
+		rest = trimmed[loc[1]:]
+	}
+}
+
 // liftLandingTagline removes the tagline from the body and returns it for the frontmatter.
+//
+// The tagline is the hero's first CONTENT line: any badge lines under the H1 are stepped over
+// first, and the line after them must be the tagline. Stepping over them is what keeps the
+// projection from depending on the hero's decoration; the position-anchoring that stops a later
+// bold-opening paragraph being hoisted into the hero is preserved, because the badge scan stops at
+// the first line that is not a badge.
 //
 // A missing tagline is a hard error rather than an empty hero or a built-in default: the tagline is
 // the product's positioning line, and a silent fallback would ship a home page that quietly
 // disagrees with the README it is projected from.
 func liftLandingTagline(body string) (tagline, rest string, err error) {
-	m := landingTaglinePattern.FindStringSubmatch(body)
+	badges, hero := splitLandingBadges(body)
+	m := landingTaglinePattern.FindStringSubmatch(hero)
 	if m == nil {
-		return "", "", fmt.Errorf("README.md: no tagline found — the line after the H1 must be a " +
-			"single bold run (**…**) followed by a blank line; it becomes the site hero tagline")
+		return "", "", fmt.Errorf("README.md: no tagline found — the hero's first line after any " +
+			"badge lines must be a single bold run (**…**) followed by a blank line; it becomes the " +
+			"site hero tagline")
 	}
-	return m[1], landingTaglinePattern.ReplaceAllString(body, ""), nil
+	return m[1], badges + landingTaglinePattern.ReplaceAllString(hero, ""), nil
 }
 
 // yamlQuote renders s as a double-quoted YAML scalar, so a tagline containing ": ", a leading "#",

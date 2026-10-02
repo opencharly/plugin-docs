@@ -125,8 +125,18 @@ func generateCLI(outRoot string, plugins []pluginEntity) (int, error) {
 				"`%s` is invoked and under which parent.\n", c.word)
 		}
 
+		// The page path goes through the SAME sanitizer as every link target
+		// (sanitizeSegment, sources.go) — this emitter was the one place that did not, and
+		// the omission is invisible in the file name while breaking the URL: a command word
+		// carrying a colon (the `noun:verb` form — twelve of them live under `box` alone)
+		// produced a literal `reference/cli/build:box.md`, which Astro serves at the
+		// slug-mangled `/reference/clibuildbox/` while every generated natural link to
+		// `/reference/cli/build-box/` 404s. Nineteen such pages were committed before this,
+		// measured on the docs repo. Page path == served URL == link target is the invariant
+		// the sanitizer exists to make true BY CONSTRUCTION; a raw identity must not be able
+		// to leak a colon into a page name while its links disagree.
 		if err := (page{
-			Path:        "reference/cli/" + c.word + ".md",
+			Path:        "reference/cli/" + sanitizeSegment(c.word) + ".md",
 			Title:       c.word,
 			Description: cliPageDescription(c.word, c.owners),
 			Body:        b.String(),

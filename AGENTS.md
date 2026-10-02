@@ -47,7 +47,16 @@ Canonical files:
   per-repo candy gate.
 - The R10 witness is the `docs-resolve` disposable local bed (declared in
   `charly.yml`): it runs `charly docs generate` against a hermetic fixture and
-  asserts the Go-module tag form resolves.
+  asserts the Go-module tag form resolves, that the landing projection lifts the
+  hero tagline from under the README's badge lines while keeping the badges in the
+  body, and that the CLI page path for a colon-carrying command word is the
+  sanitized form. The fixture README carries badges for exactly that reason — a
+  fixture without them does not exercise the landing path at all — and the fixture
+  project resolves `plugin-box` through `extra_repos` for the same reason: it is
+  the candy that declares the colon-carrying `command:<verb>:box` words, so a
+  fixture without it does not exercise the CLI page-path path at all. Its
+  hand-authored start page links to one of those words at the sanitized spelling,
+  which makes the fixture's own link gate the witness.
 
 ## Modify this repo
 

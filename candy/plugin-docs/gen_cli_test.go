@@ -111,6 +111,53 @@ func TestGenerateCLIWordServedTwiceGetsOnePage(t *testing.T) {
 	}
 }
 
+// TestGenerateCLIPagePathIsSanitized guards page path == served URL == link target for a
+// command word that carries a colon. The `noun:verb` form is the normal spelling of a nested
+// command (twelve live under `box` alone), and this emitter was the ONE page-path producer
+// that wrote the raw identity instead of running it through sanitizeSegment — every link
+// target already sanitizes each segment (sanitizeSitePathSegments), so the page was emitted at
+// a name its own links did not point at.
+//
+// The failure is invisible in the file name and only shows up as a URL: Astro strips `:` when
+// it derives a route slug, so `reference/cli/build:box.md` is served at
+// `/reference/clibuildbox/` while every generated link goes to `/reference/cli/build-box/`.
+// Nineteen such pages were committed to the docs repo before this test existed.
+//
+// This is asserted as a PAIR — the sanitized file exists AND the raw one does not — because
+// checking only the first would pass on a generator that wrote both.
+func TestGenerateCLIPagePathIsSanitized(t *testing.T) {
+	out := t.TempDir()
+	plugins := []pluginEntity{
+		{entity: entity{Name: "plugin-box", Candy: &candyView{
+			Version: "2026.194.0000",
+			Plugin:  &spec.Plugin{Providers: []spec.PluginCapability{"command:build:box"}}}}, CompiledIn: true},
+	}
+	if _, err := generateCLI(out, plugins); err != nil {
+		t.Fatalf("generateCLI: %v", err)
+	}
+
+	// The word keeps its raw spelling in the page's own prose — only the PATH is sanitized.
+	raw, err := os.ReadFile(filepath.Join(out, "reference", "cli", "build-box.md"))
+	if err != nil {
+		t.Fatalf("sanitized page reference/cli/build-box.md not emitted: %v", err)
+	}
+	if !strings.Contains(string(raw), "build:box") {
+		t.Errorf("the word's raw spelling should still be rendered on the page:\n%s", firstLines(string(raw), 6))
+	}
+
+	if _, err := os.Stat(filepath.Join(out, "reference", "cli", "build:box.md")); err == nil {
+		t.Errorf("raw colon page reference/cli/build:box.md was still written — " +
+			"the page path did not go through sanitizeSegment")
+	}
+
+	// And the invariant the sanitizer exists to establish: the emitted path is exactly what
+	// the link-target sanitizer produces for the same word.
+	want := "reference/cli/" + sanitizeSegment("build:box") + ".md"
+	if got := "reference/cli/build-box.md"; got != want {
+		t.Errorf("page path %q does not match the link-target sanitization %q", got, want)
+	}
+}
+
 func firstLines(s string, n int) string {
 	parts := strings.SplitN(s, "\n", n+1)
 	if len(parts) > n {
