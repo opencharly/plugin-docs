@@ -47,7 +47,10 @@ Canonical files:
   per-repo candy gate.
 - The R10 witness is the `docs-resolve` disposable local bed (declared in
   `charly.yml`): it runs `charly docs generate` against a hermetic fixture and
-  asserts the Go-module tag form resolves.
+  asserts the Go-module tag form resolves **and** that the landing projection
+  lifts the hero tagline from under the README's badge lines while keeping the
+  badges in the body. The fixture README carries badges for exactly that reason —
+  a fixture without them does not exercise the landing path at all.
 
 ## Modify this repo
 

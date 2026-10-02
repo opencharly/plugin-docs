@@ -13,21 +13,31 @@ discover:
       recursive: true
 
 # =============================================================================
-# docs-resolve-app / docs-resolve — the R10 witness for the docs generator's
-# extra_repos/release_repos RESOLUTION path (candy/plugin-docs catalog.go →
-# refs.GitLatestTag, from the pinned github.com/opencharly/spec).
+# docs-resolve-app / docs-resolve — the R10 witness for TWO generator paths, both
+# reached by the one `charly docs generate` this bed runs.
 #
-# WHY THIS BED EXISTS. The generator resolves a repo named in `extra_repos` to
-# its newest CalVer tag via refs.GitLatestTag. A repo mid-migration carries BOTH
-# the plain CalVer tags (v<YYYY>.<DDD>.<HHMM>) and the Go-module tags
-# (v0.<YYYYDDD>.<HHMM>) the proxy-consumed root-module repos require; the pinned
-# spec must rank the NEWER Go-form tag above a STALE plain tag, or the generated
-# page freezes at the old plain tag (the defect that pinned plugin-gh to
-# v2026.252.1501). This bed exercises that resolution END-TO-END on a
+# WHY THIS BED EXISTS (1) — the extra_repos/release_repos RESOLUTION path
+# (candy/plugin-docs catalog.go → refs.GitLatestTag, from the pinned
+# github.com/opencharly/spec). The generator resolves a repo named in
+# `extra_repos` to its newest CalVer tag via refs.GitLatestTag. A repo
+# mid-migration carries BOTH the plain CalVer tags (v<YYYY>.<DDD>.<HHMM>) and the
+# Go-module tags (v0.<YYYYDDD>.<HHMM>) the proxy-consumed root-module repos
+# require; the pinned spec must rank the NEWER Go-form tag above a STALE plain
+# tag, or the generated page freezes at the old plain tag (the defect that pinned
+# plugin-gh to v2026.252.1501). This bed exercises that resolution END-TO-END on a
 # disposable target: it composes THIS checkout's candy and runs `charly docs
 # generate` over a hermetic fixture whose project declares extra_repos:
 # [plugin-gh] — so the changed resolver path actually executes — then asserts the
 # generated page is keyed by the Go-form tag.
+#
+# WHY THIS BED EXISTS (2) — the LANDING projection (gen_landing.go →
+# liftLandingTagline). The home page is projected from the project's README.md,
+# and the hero's tagline is lifted out of the body into the page frontmatter. The
+# fixture README carries two badge lines between its H1 and its tagline — the
+# shape a real README has, and the shape that used to make the projection
+# hard-fail ("no tagline found") — so the third step asserts the tagline is lifted
+# from UNDER the badges, the badges are kept in the body, and the tagline is not
+# also left behind in it.
 #
 # The fixture (candy/plugin-docs/testdata/bed-fixture) is self-contained and
 # INTERNALLY CONSISTENT (its own project + narrative sources + hand-authored pages
@@ -50,7 +60,7 @@ docs-resolve:
         disposable: true
         lifecycle: dev
         description: >-
-            R10 witness for the docs generator's extra_repos/release_repos resolution (candy/plugin-docs catalog.go → refs.GitLatestTag). Stages the hermetic fixture, runs `charly docs generate` (the out-of-process command:docs plugin built from THIS checkout) against a project declaring `extra_repos: [plugin-gh]`, then asserts the generated plugin-gh page is keyed by the Go-module tag FORM (v0.<YYYYDDD>.<HHMM> → the page dir `...-v0-...`) — the resolution a stale plain tag (v<YYYY>.<DDD>.<HHMM> → `...-v2026-...`) would break. The assertion is FORM-based, not a pinned tag literal, so it stays green as plugin-gh advances and red exactly on the regression.
+            R10 witness for the docs generator's extra_repos/release_repos resolution (candy/plugin-docs catalog.go → refs.GitLatestTag). Stages the hermetic fixture, runs `charly docs generate` (the out-of-process command:docs plugin built from THIS checkout) against a project declaring `extra_repos: [plugin-gh]`, then asserts the generated plugin-gh page is keyed by the Go-module tag FORM (v0.<YYYYDDD>.<HHMM> → the page dir `...-v0-...`) — the resolution a stale plain tag (v<YYYY>.<DDD>.<HHMM> → `...-v2026-...`) would break. The assertion is FORM-based, not a pinned tag literal, so it stays green as plugin-gh advances and red exactly on the regression. The SAME run also witnesses the LANDING projection (gen_landing.go → liftLandingTagline): the fixture README carries two badge lines between its H1 and its tagline, and a further step asserts the tagline is lifted from UNDER them into the home page's frontmatter, that both badges are KEPT in the body, and that the tagline is not also left behind in it.
         plan:
             - check: stage the hermetic fixture into a scratch site and run charly docs generate (the composed command:docs plugin) against a project with extra_repos [plugin-gh]
               id: docs-resolve-generate
@@ -95,3 +105,31 @@ docs-resolve:
                       echo "STALE plain-tag plugin-gh page present:"; ls "$DIR" | grep plugin-gh; exit 1
                     fi
                     ls "$DIR" | grep -E 'plugin-gh-v0-[0-9]{7}-[0-9]+'
+            - check: the projected home page lifts the tagline from UNDER the hero's badge lines, keeps the badges in the body, and never prints the tagline twice
+              id: docs-resolve-tagline
+              exit_status: 0
+              context:
+                - runtime
+              stdout:
+                - matches: 'tagline: "A fixture root\.'
+              command:
+                in_container: false
+                command: |
+                    set -eu
+                    INDEX=/tmp/docs-resolve-site/src/content/docs/index.md
+                    [ -f "$INDEX" ] || { echo "no projected home page"; exit 1; }
+                    # The fixture's README puts TWO badge lines between the H1 and the tagline —
+                    # the shape charly's own README has. Anchoring the tagline to the line directly
+                    # after the H1 made the projection hard-fail on that shape; the badges are
+                    # stepped over instead, and the badges are KEPT in the body (only the tagline
+                    # is lifted, because the hero renders it from the frontmatter).
+                    grep -F 'tagline: "A fixture root."' "$INDEX"
+                    for b in badge.svg second.svg; do
+                      grep -qF "example.com/$b" "$INDEX" || { echo "badge $b dropped from the body"; exit 1; }
+                    done
+                    # Lifted, never ALSO left in the body: printing the tagline twice is the
+                    # regression the position-anchoring exists to stop.
+                    if grep -qF '**A fixture root.**' "$INDEX"; then
+                      echo "tagline left in the body as well as in the frontmatter"; exit 1
+                    fi
+                    echo "tagline lifted from under the badges; both badges kept"
