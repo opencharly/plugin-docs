@@ -13,7 +13,7 @@ discover:
       recursive: true
 
 # =============================================================================
-# docs-resolve-app / docs-resolve — the R10 witness for THREE generator paths, all
+# docs-resolve-app / docs-resolve — the R10 witness for FOUR generator paths, all
 # reached by the one `charly docs generate` this bed runs.
 #
 # WHY THIS BED EXISTS (1) — the extra_repos/release_repos RESOLUTION path
@@ -54,6 +54,13 @@ discover:
 # sanitizes. It is red-then-green through the existing gate, and the fourth step
 # below asserts the page-path pair directly so the failure names itself.
 #
+# WHY THIS BED EXISTS (4) — the SOUL projection (gen_soul.go). SOUL.md is the
+# identity of charly and every charly agent; it is published verbatim apart from
+# the one mechanical edit every root page gets (the source H1 is dropped, since
+# Starlight renders the frontmatter title as the page heading). The fifth step
+# below asserts the page is emitted, carries the generated header (so it is
+# prunable, not an orphan), drops the H1, and publishes the body.
+#
 # The fixture (candy/plugin-docs/testdata/bed-fixture) is self-contained and
 # INTERNALLY CONSISTENT (its own project + narrative sources + hand-authored pages
 # + astro config + the candy's testdata/marketplace corpus), so the generate
@@ -65,7 +72,8 @@ docs-resolve-app:
         description: |-
             Minimal kind:local template for the docs-resolve bed — composes the local
             plugin-docs candy (no install content) so the bed exercises the generator's
-            extra_repos resolution on a disposable host:local target.
+            extra_repos resolution, the landing, soul and CLI page-path projections on a
+            disposable host:local target.
         candy:
             - plugin-docs
 docs-resolve:
@@ -75,7 +83,7 @@ docs-resolve:
         disposable: true
         lifecycle: dev
         description: >-
-            R10 witness for THREE docs-generator paths, all reached by the one `charly docs generate` this bed runs (the out-of-process command:docs plugin built from THIS checkout) against a hermetic fixture whose project declares `extra_repos: [plugin-gh, plugin-box]`. (1) The extra_repos/release_repos RESOLUTION path (candy/plugin-docs catalog.go → refs.GitLatestTag): the generated plugin-gh page must be keyed by the Go-module tag FORM (v0.<YYYYDDD>.<HHMM> → the page dir `...-v0-...`) — the resolution a stale plain tag (v<YYYY>.<DDD>.<HHMM> → `...-v2026-...`) would break. The assertion is FORM-based, not a pinned tag literal, so it stays green as plugin-gh advances and red exactly on the regression. (2) The LANDING projection (gen_landing.go → liftLandingTagline): the fixture README carries two badge lines between its H1 and its tagline, and a step asserts the tagline is lifted from UNDER them into the home page's frontmatter, that both badges are KEPT in the body, and that the tagline is not also left behind in it. (3) The CLI PAGE-PATH sanitizer (gen_cli.go → sanitizeSegment): the fixture's second extra repo, plugin-box, declares the twelve colon-carrying `command:<verb>:box` words, and the fixture's own hand-authored start page links to one of them at the SANITIZED spelling, so a step asserts the emitter wrote `reference/cli/build-box.md`, wrote no raw-colon page, and kept the word's RAW spelling in the page. The fixture's two extra repos are each load-bearing: plugin-gh for path (1), plugin-box for path (3).
+            R10 witness for FOUR docs-generator paths, all reached by the one `charly docs generate` this bed runs (the out-of-process command:docs plugin built from THIS checkout) against a hermetic fixture whose project declares `extra_repos: [plugin-gh, plugin-box]`. (1) The extra_repos/release_repos RESOLUTION path (candy/plugin-docs catalog.go → refs.GitLatestTag): the generated plugin-gh page must be keyed by the Go-module tag FORM (v0.<YYYYDDD>.<HHMM> → the page dir `...-v0-...`) — the resolution a stale plain tag (v<YYYY>.<DDD>.<HHMM> → `...-v2026-...`) would break. The assertion is FORM-based, not a pinned tag literal, so it stays green as plugin-gh advances and red exactly on the regression. (2) The LANDING projection (gen_landing.go → liftLandingTagline): the fixture README carries two badge lines between its H1 and its tagline, and a step asserts the tagline is lifted from UNDER them into the home page's frontmatter, that both badges are KEPT in the body, and that the tagline is not also left behind in it. (3) The CLI PAGE-PATH sanitizer (gen_cli.go → sanitizeSegment): the fixture's second extra repo, plugin-box, declares the twelve colon-carrying `command:<verb>:box` words, and the fixture's own hand-authored start page links to one of them at the SANITIZED spelling, so a step asserts the emitter wrote `reference/cli/build-box.md`, wrote no raw-colon page, and kept the word's RAW spelling in the page. (4) The SOUL projection (gen_soul.go): SOUL.md is published as `soul.md` verbatim apart from the dropped H1 (the frontmatter title renders it), and a step asserts the page carries the generated header (so it is prunable, not an orphan), drops the source H1, and publishes the identity body. The fixture's two extra repos are each load-bearing: plugin-gh for path (1), plugin-box for path (3).
         plan:
             - check: stage the hermetic fixture into a scratch site and run charly docs generate (the composed command:docs plugin) against a project with extra_repos [plugin-gh, plugin-box]
               id: docs-resolve-generate
@@ -176,3 +184,28 @@ docs-resolve:
                     grep -qF 'build:box' "$DIR/build-box.md" || {
                       echo "the sanitized page lost the word's raw spelling"; exit 1; }
                     ls "$DIR" | grep -F 'build-box.md'
+            - check: SOUL.md is projected to soul.md — published with the generated header, its source H1 dropped, and its identity body intact
+              id: docs-resolve-soul
+              exit_status: 0
+              context:
+                - runtime
+              stdout:
+                - matches: 'soul\.md'
+              command:
+                in_container: false
+                command: |
+                    set -eu
+                    SOUL=/tmp/docs-resolve-site/src/content/docs/soul.md
+                    [ -f "$SOUL" ] || { echo "no projected soul.md"; exit 1; }
+                    # The generated header is what makes the page PRUNED rather than left as an
+                    # orphan the moment the generator stops emitting it.
+                    grep -qF 'DO-NOT-EDIT' "$SOUL" || { echo "soul.md carries no generated header"; exit 1; }
+                    # The source H1 is dropped (Starlight renders the frontmatter title); the
+                    # title becomes "Who We Are".
+                    grep -qF 'title: "Who We Are"' "$SOUL" || { echo "soul.md has no frontmatter title"; exit 1; }
+                    if grep -qF '# SOUL.md — Who You Are' "$SOUL"; then
+                      echo "the source H1 was kept; the frontmatter title renders it"; exit 1
+                    fi
+                    # The identity body is published.
+                    grep -qF 'The fixture soul.' "$SOUL" || { echo "soul.md lost its body"; exit 1; }
+                    ls "$SOUL"

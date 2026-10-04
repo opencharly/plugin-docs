@@ -10,7 +10,7 @@ import (
 // generate renders every generated page for the opencharly.ai site.
 //
 // The generator owns the home page (`index.md`, projected from README.md), `vision.md`,
-// `grievances.md`, `liberation.md`, `reference/` and `recipes/`, and rewrites them wholesale each
+// `grievances.md`, `liberation.md`, `soul.md`, `reference/` and `recipes/`, and rewrites them wholesale each
 // run. What remains hand-authored is the teaching narrative the repository has no equivalent of:
 // the getting-started pages, the concepts curriculum, and the guides.
 //
@@ -150,6 +150,9 @@ func generate(root, out, pluginsDir string) error {
 	if err := generateLiberation(root, out); err != nil {
 		return err
 	}
+	if err := generateSoul(root, out); err != nil {
+		return err
+	}
 	// The home page is a projection of README.md — see gen_landing.go for why it stopped being
 	// hand-authored. It must be emitted BEFORE the link gates, which check it like any other page.
 	if err := generateLanding(root, out); err != nil {
@@ -174,9 +177,9 @@ func generate(root, out, pluginsDir string) error {
 	// the number is simply the previous run's output.
 	//
 	// It is deliberately NOT presented as a cleared-vs-written comparison. The counts printed
-	// here cover five page families; five further generated pages (reference/providers.md plus
-	// the grievances, landing, liberation and vision pages) are not among them, so cleared always
-	// exceeds the printed sum by five even when nothing is wrong. A generator that stops emitting
+	// here cover five page families; six further generated pages (reference/providers.md plus
+	// the grievances, landing, liberation, soul and vision pages) are not among them, so cleared always
+	// exceeds the printed sum by six even when nothing is wrong. A generator that stops emitting
 	// something is caught by the docs repo's drift gate — prune-first means the page simply does not
 	// come back, and git reports it as a deletion.
 	fmt.Printf("charly docs: %d recipe pages, %d plugin pages (%d provider words), %d cli pages, %d candy pages, %d box pages (%d generated pages cleared before regeneration)\n",
