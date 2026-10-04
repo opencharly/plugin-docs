@@ -604,6 +604,9 @@ func TestGenerateRegenNoOp(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "LIBERATION.md"), []byte("# Liberation"+"\n"+"\n"+"The fixture manifesto."+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(root, "SOUL.md"), []byte("# SOUL.md — Who You Are"+"\n"+"\n"+"The fixture soul."+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	// The marketplace corpus: one plugin with one skill card.
 	pluginsDir := filepath.Join(base, "marketplace")
