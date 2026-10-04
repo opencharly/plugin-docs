@@ -18,7 +18,12 @@ import (
 // A copy drifts; a projection cannot. The home page moved into this list precisely because it was
 // the counter-example — two thirds of it was README prose maintained twice, across a submodule
 // boundary, under a footnote claiming nothing on the site was a hand-maintained copy.
-func generate(root, out, pluginsDir string) error {
+//
+// root is the charly checkout (the catalog walk: candy/, box/, the docs: node) AND the landing
+// source (README.md). narrativeDir holds the four narrative sources (SOUL/VISION/GRIEVANCES/
+// LIBERATION); it defaults to root (one repo) and is pointed at the umbrella checkout once those
+// pages move there, while the catalog and the landing stay on charly.
+func generate(root, out, pluginsDir, narrativeDir string) error {
 	if _, err := os.Stat(filepath.Join(root, unifiedFileName)); err != nil {
 		return fmt.Errorf("--root %s does not look like an charly project (no %s): %w", root, unifiedFileName, err)
 	}
@@ -141,16 +146,16 @@ func generate(root, out, pluginsDir string) error {
 	// by one, and that off-by-one was then copied into a CHANGELOG — a tally nobody can reconcile
 	// against the tree is worse than no tally.
 	skillPages++
-	if err := generateVision(root, out); err != nil {
+	if err := generateVision(narrativeDir, out); err != nil {
 		return err
 	}
-	if err := generateGrievances(root, out); err != nil {
+	if err := generateGrievances(narrativeDir, out); err != nil {
 		return err
 	}
-	if err := generateLiberation(root, out); err != nil {
+	if err := generateLiberation(narrativeDir, out); err != nil {
 		return err
 	}
-	if err := generateSoul(root, out); err != nil {
+	if err := generateSoul(narrativeDir, out); err != nil {
 		return err
 	}
 	// The home page is a projection of README.md — see gen_landing.go for why it stopped being

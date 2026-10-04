@@ -57,7 +57,7 @@ func generateSite(t *testing.T, sidebarEntries ...string) (out string, err error
 	// seam the RDD bed uses to pass a freshly regenerated corpus).
 	pluginsDir := fixtureMarketplaceDir(t)
 
-	return out, generate(root, out, pluginsDir)
+	return out, generate(root, out, pluginsDir, root)
 }
 
 // fixtureMarketplaceDir returns the fixture marketplace corpus (testdata/marketplace): a small,
@@ -82,6 +82,63 @@ func fixtureMarketplaceDir(t *testing.T) string {
 		t.Fatalf("fixture marketplace corpus missing at %s — refresh it from testdata/marketplace", dir)
 	}
 	return dir
+}
+
+// TestGenerateNarrativeDirSeparateFromRoot proves the --narrative seam: the narrative pages
+// (soul/vision/grievances/liberation) are read from the narrative directory, NOT from the
+// catalog root. The four narratives moved to the umbrella repo root while the catalog + landing
+// stay on the charly checkout, so a run whose narrative dir holds DIFFERENT text must publish
+// that text — the witness that generate() wired narrativeDir into the four root-page passes and
+// not root.
+func TestGenerateNarrativeDirSeparateFromRoot(t *testing.T) {
+	root := fixtureProjectRoot(t)
+	narrative := t.TempDir()
+	// The narrative dir carries a soul and vision that DIFFER from the root's fixture copies.
+	if err := os.WriteFile(filepath.Join(narrative, "SOUL.md"),
+		[]byte("# SOUL.md — Who You Are\n\nThe NARRATIVE soul.\n"), 0o644); err != nil {
+		t.Fatalf("write narrative SOUL.md: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(narrative, "VISION.md"),
+		[]byte("# The Vision\n\nThe NARRATIVE vision.\n"), 0o644); err != nil {
+		t.Fatalf("write narrative VISION.md: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(narrative, "GRIEVANCES.md"),
+		[]byte("# Five grievances\n\nThe NARRATIVE grievances.\n"), 0o644); err != nil {
+		t.Fatalf("write narrative GRIEVANCES.md: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(narrative, "LIBERATION.md"),
+		[]byte("# Liberation\n\nThe NARRATIVE liberation.\n"), 0o644); err != nil {
+		t.Fatalf("write narrative LIBERATION.md: %v", err)
+	}
+
+	base := t.TempDir()
+	out := filepath.Join(base, "src", "content", "docs")
+	if err := os.MkdirAll(out, 0o755); err != nil {
+		t.Fatalf("create content root: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(base, "astro.config.mjs"),
+		[]byte(astroConfig()), 0o644); err != nil {
+		t.Fatalf("write astro config: %v", err)
+	}
+	seedHandAuthoredPages(t, out)
+	if err := generate(root, out, fixtureMarketplaceDir(t), narrative); err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	for _, tc := range []struct{ file, want string }{
+		{"soul.md", "The NARRATIVE soul."},
+		{"vision.md", "The NARRATIVE vision."},
+		{"grievances.md", "The NARRATIVE grievances."},
+		{"liberation.md", "The NARRATIVE liberation."},
+	} {
+		raw, err := os.ReadFile(filepath.Join(out, tc.file))
+		if err != nil {
+			t.Fatalf("read %s: %v", tc.file, err)
+		}
+		if !strings.Contains(string(raw), tc.want) {
+			t.Errorf("%s did not project the narrative dir's source (want %q):\n%s", tc.file, tc.want, raw)
+		}
+	}
 }
 
 func fileExists(p string) bool {
@@ -248,7 +305,7 @@ func TestGeneratePreservesHeaderlessFilesUnderGeneratedTrees(t *testing.T) {
 		t.Fatalf("write keep-me.md: %v", err)
 	}
 
-	if err := generate(root, out, fixtureMarketplaceDir(t)); err != nil {
+	if err := generate(root, out, fixtureMarketplaceDir(t), root); err != nil {
 		t.Fatalf("generate: %v", err)
 	}
 	if _, err := os.Stat(kept); err != nil {
@@ -337,7 +394,7 @@ func TestGenerateGateBeforePrune(t *testing.T) {
 		t.Fatalf("seed generated page: %v", err)
 	}
 
-	err = generate(root, out, badCorpus)
+	err = generate(root, out, badCorpus, root)
 	if err == nil {
 		t.Fatal("generate: expected the cross-reference gate to reject the bad reference, got nil")
 	}
