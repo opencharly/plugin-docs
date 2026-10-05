@@ -102,6 +102,7 @@ docs-resolve:
                     cp "$FIX"/site/start/*.md "$SITE/src/content/docs/start/"
                     ${CHARLY_BIN} docs generate \
                       --root "$FIX/project" \
+                      --narrative "$FIX/narrative" \
                       --plugins candy/plugin-docs/testdata/marketplace \
                       --out "$SITE/src/content/docs"
             - check: the generated plugin-gh page is keyed by a Go-module tag (v0.<YYYYDDD>.<HHMM>), NOT the stale plain tag
@@ -206,6 +207,35 @@ docs-resolve:
                     if grep -qF '# SOUL.md — Who You Are' "$SOUL"; then
                       echo "the source H1 was kept; the frontmatter title renders it"; exit 1
                     fi
-                    # The identity body is published.
-                    grep -qF 'The fixture soul.' "$SOUL" || { echo "soul.md lost its body"; exit 1; }
+                    # The identity body is published (from the --narrative source).
+                    grep -qF 'The narrative-dir soul.' "$SOUL" || { echo "soul.md lost its body"; exit 1; }
                     ls "$SOUL"
+            - check: the --narrative seam reads the four root pages from the NARRATIVE dir, not --root (the changed path)
+              id: docs-resolve-narrative-seam
+              exit_status: 0
+              context:
+                - runtime
+              stdout:
+                - matches: 'seam verified'
+              command:
+                in_container: false
+                command: |
+                    set -eu
+                    # The change under test is the --narrative flag: the four root narrative
+                    # pages must be read from --narrative, NOT from --root. The generate step
+                    # above passes --narrative "$FIX/narrative", whose SOUL/VISION/GRIEVANCES/
+                    # LIBERATION bodies DIFFER from the identical-named files beside --root
+                    # ("The narrative-dir soul." vs "The fixture soul."). So this step goes RED
+                    # if the seam is unwired (root's text would be published) and GREEN when it
+                    # reads the narrative dir — the bed EXERCISES the new path rather than
+                    # passing identically before and after the diff.
+                    SITE=/tmp/docs-resolve-site/src/content/docs
+                    for f in soul vision grievances liberation; do
+                      if ! grep -qF "The narrative-dir $f." "$SITE/$f.md"; then
+                        echo "$f.md did not project the NARRATIVE dir's source; got:"; head -3 "$SITE/$f.md" || true; exit 1
+                      fi
+                      if grep -qF "The fixture $f." "$SITE/$f.md"; then
+                        echo "$f.md projected the ROOT's source — the --narrative seam is unwired"; exit 1
+                      fi
+                    done
+                    echo "all four root pages read from --narrative, not --root (narrative-dir (seam verified))"

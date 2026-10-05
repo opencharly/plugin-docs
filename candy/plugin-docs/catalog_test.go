@@ -643,7 +643,7 @@ func TestGenerateRegenNoOp(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		if err := generate(root, out, pluginsDir); err != nil {
+		if err := generate(root, out, pluginsDir, root); err != nil {
 			t.Fatalf("generate: %v", err)
 		}
 	}

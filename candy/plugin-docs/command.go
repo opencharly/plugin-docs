@@ -26,6 +26,12 @@ type generateCmd struct {
 	// the standalone opencharly/marketplace repo — so the docs workflow passes its marketplace
 	// submodule here. Default: <root>/plugins (the pre-cutover location).
 	Plugins string `name:"plugins" help:"Marketplace checkout holding the plugin corpus (default: <root>/plugins)"`
+	// Narrative is the directory holding the narrative sources (SOUL.md, VISION.md,
+	// GRIEVANCES.md, LIBERATION.md) the root pages project. The narrative pages moved to the
+	// umbrella repo root (where every agent session roots), while the catalog and the landing
+	// page stay on the charly checkout — so the docs workflow passes its umbrella checkout here
+	// and keeps --root on charly. Default: <root> (the pre-move location, one repo).
+	Narrative string `name:"narrative" help:"Directory holding SOUL/VISION/GRIEVANCES/LIBERATION (default: <root>)"`
 }
 
 // dispatchDocsCLI is the single entry point both placements use (CliMain out-of-process,
@@ -78,5 +84,13 @@ func (c *generateCmd) Run() error {
 	if err != nil {
 		return fmt.Errorf("resolve --plugins: %w", err)
 	}
-	return generate(root, out, pluginsDir)
+	narrativeDir := c.Narrative
+	if narrativeDir == "" {
+		narrativeDir = root
+	}
+	narrativeDir, err = filepath.Abs(narrativeDir)
+	if err != nil {
+		return fmt.Errorf("resolve --narrative: %w", err)
+	}
+	return generate(root, out, pluginsDir, narrativeDir)
 }
