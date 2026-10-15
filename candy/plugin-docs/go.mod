@@ -5,8 +5,8 @@ go 1.26.4
 require (
 	cuelang.org/go v0.16.1
 	github.com/alecthomas/kong v1.15.0
-	github.com/opencharly/sdk v0.2026266.2340
-	github.com/opencharly/spec v0.2026267.747
+	github.com/opencharly/sdk v0.2026288.1246
+	github.com/opencharly/spec v0.2026287.1529
 	gopkg.in/yaml.v3 v3.0.1
 )
 
