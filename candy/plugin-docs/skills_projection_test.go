@@ -34,7 +34,10 @@ func TestCollectCandySkills_ProjectsMovedCandySkill(t *testing.T) {
 	if err != nil {
 		t.Fatalf("walkRemote: %v", err)
 	}
-	skills := collectCandySkills(ents)
+	skills, err := collectCandySkills(ents)
+	if err != nil {
+		t.Fatalf("collectCandySkills: %v", err)
+	}
 	found := false
 	for _, s := range skills {
 		if s.Name == "ripgrep" {

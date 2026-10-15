@@ -93,7 +93,15 @@ func generate(root, out, pluginsDir, narrativeDir string) error {
 	// (2–3 bullets for one card). The corpus is authoritative for a skill it already carries
 	// (it is the published projection); the walk only contributes skills the corpus lacks (a
 	// moved candy whose regeneration has not landed), which is exactly its stated purpose.
-	skills = dedupeSkills(skills, collectCandySkills(rawEnts))
+	candySkills, err := collectCandySkills(rawEnts)
+	if err != nil {
+		// Loud, not silent (plugin-docs#18): a candy `skill:` entity that fails to decode means the
+		// complement is incomplete, and an incomplete complement is what let a 215-file pin lag go
+		// unnoticed. Failing here is separate from the cross-reference gate below, which stays as
+		// strict as it is.
+		return err
+	}
+	skills = dedupeSkills(skills, candySkills)
 	resolver := buildResolver(skills, market)
 
 	// The cross-reference gate runs BEFORE the prune: a refused run (an unresolvable
