@@ -1,0 +1,369 @@
+---
+name: docs
+description: |-
+  The `charly docs generate` verb — the generator rendering the reference half of opencharly.ai from this repo's canonical sources. The site lives in the standalone opencharly/docs repo; regeneration is a docs PR that bumps its charly pin. Use before any `charly docs` work, the site's generated trees, or the candy/plugin-docs runtime plugin.
+---
+
+# docs — generate the opencharly.ai site
+
+`charly docs generate` emits the generated half of the documentation site published at
+**opencharly.ai** from the sources that already exist in this repository. It is served by
+`candy/plugin-docs`.
+
+## R4 — documentation never routes around a defect
+
+The rulebook states R4 as a mandate (umbrella `AGENTS.md`, "The ground-truth rules
+R1–R10"); this is its operationalization for every page this skill renders and every
+hand-authored page beside it.
+
+- **Fix the product first.** When documented behaviour and the code disagree, establish
+  which side holds the INTENT, then fix the code BEFORE touching the prose. Editing docs
+  to match a bug is forbidden; so is editing them to avoid one.
+- **The tells of a routed-around defect:** a `git clone`, a `cd`, or a `-C` standing in
+  for a flag that should work; an "except on…" caveat; a "known limitation" note in place
+  of a fix. Each describes the defect instead of removing it — and makes it permanent by
+  making it look intended.
+- **Binary-only reader.** Every command a reader is told to run MUST work with nothing but
+  the `charly` binary installed — no clone, no `cd`, no pre-existing project, no unnamed
+  companion tool. Write every page for a reader who installed `charly` as a native package
+  with NO charly checkout on the machine: no `task` target, no `./bin/charly`, no
+  repo-relative path, no verb supplied by a candy that exists only in this repository.
+  `--repo <owner>/<repo>` reads a published project without a clone;
+  `charly box new project <dir>` starts a local one.
+- **The one exception is the INSTALL page**, where the reader obtains charly: it leads
+  with the native package and scopes the checkout to working ON charly. A
+  repository-maintenance command is named as maintenance this project performs, never as
+  a step the reader runs.
+- **Anywhere else, needing more than the binary is a PRODUCT DEFECT** — the missing
+  capability is the bug, and the fix belongs in `charly`. If that fix is genuinely out of
+  scope, file it with its root cause and let the page say nothing rather than something
+  false: silence is recoverable, a documented workaround is taught.
+
+## Placement: a RUNTIME plugin, deliberately
+
+`plugin-docs` is **not** listed in `charly/charly.yml`'s `compiled_plugins:`. A dev-time
+documentation generator has no business inside every shipped `charly` binary — it is run by
+the opencharly/docs repo's deploy workflow against a charly checkout pinned by a CI-time
+commit in `deploy.yml` (the docs repo carries no charly submodule anymore), and on a
+contributor's machine for local preview, and nowhere else.
+
+charly prescans the declared `docs` word into the Kong grammar before parse and syscall.Exec's
+the plugin binary in CLI mode on the first actual `charly docs` invocation. Nothing about the
+generator needs the host reverse channel (it reads files and writes markdown), which is exactly
+what makes the out-of-process placement free here — the same property that lets `charly candy`
+and `charly migrate` run in either placement.
+
+Because it is not in `compiled_plugins:`, the plugin is **not in `go.work`**. Its Go tests
+live in its OWN repo (opencharly/plugin-docs, `candy/plugin-docs/*_test.go`); the docs-site
+R10 bed (`docs-site-app`/`check-docs`) lives in charly. Generation, the content-drift gate,
+the Astro build and the publish all live in the opencharly/docs repo's `deploy.yml`
+workflow, which runs generation DIRECTLY with the plugin-docs CLI binary it builds at the
+tag pinned in `deploy.yml`'s build step — not via the `charly docs` word — against the charly commit
+the workflow pins (a CI-time commit in `deploy.yml`; the charly submodule was removed when
+it leaked the whole repo into consumer fetch trees, and `.gitmodules` now carries only the
+marketplace).
+
+## Usage
+
+```bash
+charly docs generate \
+  --out /absolute/path/to/site-content \
+  --root /absolute/path/to/opencharly
+```
+
+| Flag | Meaning |
+|---|---|
+| `--out` | docs content root to write into (required) |
+| `--root` | repo root holding `charly.yml`, `candy/`, `box/` (default: cwd) |
+| `--plugins` | the opencharly/marketplace checkout the skill corpus is read from (default: `<root>/plugins`) — the docs deploy passes its marketplace submodule |
+
+## What it emits
+
+The generator owns seven top-level entries — `index.md`, `grievances.md`, `vision.md`,
+`liberation.md`, `soul.md`, `reference/` and `recipes/` — and rewrites them wholesale each run, so a deleted
+source entity disappears from the site instead of lingering as an orphan page. (The table below
+expands `reference/` into its sub-trees plus the single file `reference/providers.md`, so it
+runs to many rows.) What stays hand-authored is the teaching narrative this repository has no
+equivalent of: `start/`, `concepts/` and `guides/`.
+
+**Hand-authored pages are never WRITTEN — but they are read.** The boundary is the `DO-NOT-EDIT`
+header, not the path: the prune pass reads every `.md`/`.mdx` under `--out` and removes only those
+carrying it, so a page is matched by its content, never inferred from where it sits. The
+whole-site link gate then reads hand-authored pages too, deliberately — **a dead site-absolute
+link in a `concepts/` or `guides/` page fails generation**, exactly as it would in a generated one.
+Treating "hand-authored" as "the generator ignores it" is the trap; it will not overwrite your
+page, and it will refuse to build if you link somewhere that does not exist.
+
+The home page is the newest arrival and the one people get wrong: it used to be a hand-authored
+`index.mdx` restating `README.md`, and roughly two thirds of it was README prose maintained twice
+across a submodule boundary. It is now `index.md`, projected from `README.md`. **Edit the README,
+not the page.**
+
+| Tree | Source |
+|---|---|
+| `index.md` | `README.md`, H1 and tagline dropped (the frontmatter title and hero render them), `https://opencharly.ai/…` links rewritten site-relative, and the repo-relative targets `AGENTS.md`, the marketplace repo's README and `CHANGELOG/README.md` repointed at GitHub or their site equivalent |
+| `grievances.md` | `GRIEVANCES.md`, H1 dropped, repo-relative links rewritten for a web reader |
+| `vision.md` | `VISION.md`, H1 dropped, repo-relative links rewritten for a web reader |
+| `liberation.md` | `LIBERATION.md`, H1 dropped, repo-relative links rewritten — the deliberate easter-egg page, entered last in the sidebar as "Liberation" |
+| `soul.md` | `SOUL.md`, H1 dropped, published verbatim — the identity of charly and every charly agent; self-contained, so there are no repo-relative links to rewrite |
+| `reference/cli/` | one page per `command:` provider word |
+| `reference/candy/` | every defined candy: packages, services, and its `plan:` as an acceptance spec |
+| `reference/box/` | every defined box |
+| `reference/plugin/` | providers, placement, rendered `schema/*.cue` |
+| `reference/providers.md` | the inverted index: every reserved word → its owning plugin |
+| `recipes/` | every skill plus its `references/*.md` detail pages |
+
+Every emitted file carries a `DO-NOT-EDIT` header, and **regeneration on a clean tree is a
+no-op** — the same drift gate SDD applies to generated Go.
+
+## The `docs:` node — ONE generation config
+
+Everything the assembly above needs is declared in ONE `docs:` kind entity in the charly
+repo's TOP-LEVEL `charly.yml` (`<root>/charly.yml` — the project root `generate` is pointed
+at, never a module-level manifest). It is CUE-contract-sourced: the closed `#DocsConfig`
+contract lives in `spec/schema/docs.cue` (the spec module) and the generator decodes the
+node into the GENERATED `spec.DocsConfig` types (`cue:gen`), CUE defaults applied. The node
+is discovered by the same name-first walk as `skill:`/`hook:`/`marketplace:` entities — the
+`docs` kind discriminator nested under any entity name — and the contract is explicit:
+
+- **ONE docs-site generation config per repo.** More than one `docs:` node in the root
+  `charly.yml` is a configuration error; an ABSENT node decodes to the schema defaults,
+  which reproduce the pre-config generator exactly (compiled corpus read from
+  `charly/charly.yml` + `charly/go.mod`, no release/extra repos) — an un-annotated
+  project still generates, identically.
+- The node names `sources.compiled` (the `compiled_plugins_path` manifest and the
+  `go_mod_path` pins), `sources.release_repos` / `sources.extra_repos`, the
+  `marketplace.path`, the `projections` toggles (recipes/cli/providers/candy/box/plugin/
+  landing), the hand-authored `output.hand_authored` tree, the `landing.readme` source and
+  the `gates` (site_links/sidebar_links/prune). No generation knob is hardcoded; the node
+  — or its schema defaults — answers every one.
+
+## Deployment: the drift-proof recipe
+
+Generation, the drift gate, the Astro build and the publish are the SOLE domain of the
+opencharly/docs repo's `deploy.yml` (Cloudflare Pages, project `opencharly-docs`). A local
+regeneration only ever mirrors it; the recipe that keeps the drift gate — a byte-no-op
+regeneration diff on `src/content/docs` — green:
+
+1. **charly is pinned by a CI-time commit in `deploy.yml`** (the `checkout <sha>` in its
+   charly-clone step), never by a submodule — the docs checkout's `.gitmodules` carries ONLY the
+   marketplace.
+2. **The marketplace submodule must sit at the docs-repo-RECORDED gitlink, not at `main`
+   HEAD.** The corpus moves independently of the site; the recorded gitlink is the exact
+   corpus the committed pages were generated against, while `main` HEAD is wherever the
+   corpus PRs happened to land. Checking out `main`'s moving tip and the drift gate
+   disagree by construction.
+3. **The corpus wiring candy is written BEFORE generate.** The deploy runs
+   `python3 .github/docs-corpus/build_wiring.py .github/docs-corpus/pins.tsv` into
+   `candy/docs-corpus/charly.yml` inside the charly checkout (`--root`). The pins file is
+   the release/extra-repo list in tag form (`plugin-name<TAB>v2026.DDD.CCCC`); the wiring
+   candy turns it into the `@github.com/opencharly/<name>/candy/<name>:<tag>` refs the
+   release/extra assembly resolves (`pod-*` repos carry the ref at their repo root). A run
+   that skips this step regenerates a catalog WITHOUT those repos and drifts.
+4. **`--out` sits under the docs checkout with the Astro config present** — the sidebar
+   gate (`verifySidebarLinks`) resolves every sidebar `link:` target against the emitted
+   routes and walks UP from the content root (`src/content/docs`) to find
+   `astro.config.mjs`; an absent config is a HARD error, never a skipped check.
+5. **The refs cache must be fresh/CI-equivalent.** Release/extra repos resolve at go.mod
+   pins or the NEWEST CalVer tag at generation time through `refs.DownloadRepo`, whose
+   fetched trees are cached (`refs.RepoCacheDir`, `CHARLY_REPO_CACHE` override). CI's
+   fresh cache resolves newer tags/content than a stale local one, so a stale local cache
+   regenerates a site that differs from BOTH the committed pages and CI's — the drift gate
+   stays red locally despite a correct `pins.tsv` and correct sources. When the gate is
+   red, regenerate from a warm, CI-equivalent cache and confirm the diff is exactly the
+   intended projection change.
+
+The deploy invokes generation DIRECTLY — `/tmp/plugin-docs-bin generate --root <charly>
+--plugins <marketplace> --out <docs>/src/content/docs` with the CLI binary built at the
+pinned plugin tag — so the drift gate never depends on a local `charly` install or its
+out-of-process word resolution. The docs landing is therefore: bump the charly CI-time
+commit when the pin must advance, carry the regenerated pages, and let the drift gate
+prove the two agree.
+
+## Editing a source is a docs landing
+
+Everything in that table is a PROJECTION, and every one of its sources is an ordinary
+file people edit for reasons that have nothing to do with the site — a candy's
+`description:`, a plan step, a skill's prose. Each such edit re-projects its page, and
+from that moment the committed site no longer matches its sources, so the docs repo's
+drift gate (its deploy workflow regenerates and fails on any diff) stays red until a docs
+PR lands the regenerated pages. **A one-line prose fix is therefore never a one-repo
+change.** Plan it as a multi-repo landing before starting, not after a gate says so.
+
+Two chains reach the site, and they are not the same length.
+
+**Candy and box prose — ONE hop.** `reference/candy/` and `reference/box/` are read
+straight off disk, walking each repo as its own project root. Editing a
+`candy/<name>/charly.yml` `description:` or `plan:` re-projects
+`reference/candy/<name>.md` in the same tree, immediately. The docs PR (regenerating at
+the pinned charly) belongs to the same cutover as the candy edit.
+
+**Skill prose — TWO hops, with a direct complement.** `recipes/` is NOT read from
+`candy/*/charly.yml` — but the generator DOES project candy `skill:` entities directly
+from its own remote-aware walk (`collectCandySkills`), the complement that keeps a moved
+candy's recipe references resolving on the site even before the marketplace regeneration
+lands (the stale-marketplace gap `/charly-tools:crabbox-cli` measures — see the tests
+section). The long path still holds: a skill is authored as a `skill:` entity in its
+owning candy; `charly marketplace generate` projects that into the
+opencharly/marketplace repo (`<family>/skills/<name>/SKILL.md`), and
+`charly docs generate` reads **that projection** (via `--plugins` — the marketplace
+checkout the docs repo pins as a submodule) first. Editing a `skill:`
+entity therefore changes nothing on the site until `charly marketplace generate` has
+run and the marketplace landing merges; the docs repo pins the marketplace in its own
+`.gitmodules` (branch `main`), so the change reaches readers once the marketplace main
+advances and a docs PR regenerates the site at the moved corpus. **Advancing the corpus
+without regenerating `docs` in the same change is what leaves the published site stale**,
+and nothing except the docs repo's drift gate will say so — which is precisely how the
+mirror has fallen behind before.
+
+The ordering this forces — regenerate the projection, land the producer repo, then the
+consumer (docs) and its charly pin — is `/charly-internals:git-workflow` B6's
+producer→consumer rule applied to documentation. That skill owns the landing sequence;
+the mechanism above is what makes the sequence necessary, and is all this page needs to
+carry.
+
+## Defined, not default-active
+
+The catalog enumerates what is **defined**, never what happens to be switched on. This is not a
+stylistic preference; the obvious surfaces are actively wrong for the purpose:
+
+- `charly box list boxes` lists **enabled** boxes, and resolves through main's `import:` closure —
+  which pulls arch, cachyos and fedora but **not** debian or ubuntu. A catalog built on it omits
+  every `debian.*` and `ubuntu.*` box (ten definitions that are checked out and have their own
+  skills) while duplicating ten arch boxes under transitive `cachyos.arch.*` aliases.
+- A plugin absent from `compiled_plugins:` still loads out-of-process when a plan references its
+  word, so "in the binary" is not the same set as "exists".
+
+So discovery is not the walked trees alone: the catalog is ONE assembly (R2/R5,
+`assembleCatalog`) unioning three sets —
+
+1. the **walked closure** — remote-ref-aware (`candywalk.CollectEntitiesRemote`):
+   the superproject plus every `box/<distro>` submodule, resolving any
+   `@github.com/opencharly/…` ref in a walked `require:`/`candy:` list through the
+   standalone fetch (`refs.DownloadRepo`);
+2. the **compiled corpus** — every name in the `docs:` node's `compiled_plugins_path`
+   manifest (`compiled_plugins:` list), each pinned by a require in the `go_mod_path`
+   go.mod (module `github.com/opencharly/<name>/candy/<name>`); the Go tag form
+   `v0.YYYYDDD.C` is mapped onto the repo's CalVer tag `v2026.DDD.CCCC` (the counter
+   re-zero-padded to four — `compiledPluginRef`), the repo fetched at that tag and
+   walked as a remote entity. A compiled-in plugin is therefore documented **by
+   construction**, even when no walked tree declares it — the compiled blind spot is
+   closed;
+3. the **release/extra repos** from the `docs:` config lists — bare names resolved
+   through the same `DownloadRepo` seam, at the go.mod require pin when the compiled
+   corpus go.mod requires the repo, else the repo's NEWEST CalVer tag at generation
+   time (`refs.GitLatestTag`).
+
+Every set is the DEFINED set, never the switched-on set — the two bullets above stay the
+reason the enabled surfaces cannot be trusted.
+
+## Cross-reference rewriting
+
+The skill corpus is densely self-linked in harness syntax — references across many distinct
+targets in the **skill files** the generator reads, `/charly-check:check` alone appearing many
+times. (Candy, box and `VISION.md` sources carry references too; those go through other emitters
+and are not counted here.)
+
+**3654 of those are rewritten** into site links — every reference in a skill BODY. The remaining
+11 sit in `SKILL.md` frontmatter `description:` fields and never reach the published page at all:
+`splitFrontmatter` removes the frontmatter before the body is rewritten, and `firstLine` then
+truncates the description to its first sentence for the page subtitle, which drops all 11. They
+resolve, so nothing breaks — but that is why, not because they are published unlinked.
+
+An unresolvable reference **in a body** fails generation rather than emitting a dead link; a
+reference in a `description:` is never gated, because it is never published.
+
+### One sanitizer: page path == served URL == link target
+
+Every emitted page path AND every link target run through ONE sanitizer
+(`sanitizeSegment`): lowercase ASCII letters and digits survive, every other byte renders
+as `-`. That is not cosmetic — Astro strips `.` and `:` when it derives a route slug from
+a file name, so a segment built from an entity identity (a repo path, a CalVer tag, a
+namespaced name) would be served only at a mangled URL (`githubcom/…/plugin-checkv20262…`)
+while every generated natural link to it 404s — 851 published URLs, measured on the live
+site. Entity pages are additionally namespaced by DIRECTORY (a slash, not a dot — a
+dotted filename would also be slug-mangled), so `fedora/check-pod` survives where
+`fedora.check-pod` would not. Because the sanitizer is the one transform behind both file
+names and link targets, the page path, the served route and the link target are the same
+string BY CONSTRUCTION — a raw identity can never leak a dot or a colon into a page name
+while its links disagree.
+
+Three guards keep real content from being mangled into links, each earned from an actual corpus
+case:
+
+1. the skill part must start with a letter — else `redis://charly-redis:6379` matches;
+2. the reference must not follow `/` — URL authorities;
+3. it must not follow a word character — image tags like `localhost/charly-selkies-kde:latest`.
+
+`references/<file>.md` pointers (backticked paths, never markdown links) resolve to the skill's
+own child page.
+
+### Authoring consequence: you cannot write a fake reference
+
+Because the gate fails closed, a **well-formed reference in a skill BODY must resolve** — there is
+no escape syntax. A skill therefore cannot write `/charly-` followed by two real-looking lowercase
+words as a throwaway example: that shape matches, resolves to nothing, and fails the docs build.
+
+Write generic forms with angle-bracket placeholders instead — `<` is not a letter, so the
+pattern never matches:
+
+```
+/charly-<plugin>:<skill>     ✅ safe in prose
+```
+
+This is not hypothetical, and it bit twice in one sitting. The first draft of
+`/charly-tools:docs-site` used a made-up two-word reference as its example of an unresolvable
+one, and the generator dutifully aborted — the skill documenting the gate tripped the gate. The
+fix's own "don't do this" example then tripped it a second time. Failing closed is still the
+right behaviour (a typo'd real reference is far likelier than a deliberate fake one), so
+describe the bad shape rather than spelling it.
+
+## Why declarative sources, not the CLI's help output
+
+The host renders every dynamic command word with a generic stub description, intercepts the
+depth-1 `--help` itself, and plugin-served help arrives in at least three mutually incompatible
+formats with no machine-readable dump. Parsing that would be the fragile shim R3 forbids. Every
+fact the site needs is already declared: `plugin.providers`, the per-plugin `schema/*.cue`, and
+each candy's `description:`.
+
+The trade-off is stated rather than hidden: command PARENTHOOD is a Go method
+(`CommandParent()`), not a manifest field, so CLI pages name the word and its owning plugin
+without asserting where it nests. The narrative CLI guide covers the nesting and the three
+core-spine words (`box`, `version`, `reap-orphans`) that are not `command:` providers.
+
+## Tests: hermetic by construction
+
+The generator-wiring tests are HERMETIC: they run against self-contained fixtures, never
+against the live corpus or the network. `testdata/project` is a minimal charly project
+whose `docs:` node DISABLES the compiled corpus and declares no release/extra repos — so
+the catalog assembly never fetches — plus the README/VISION/GRIEVANCES/LIBERATION
+narratives the root pages project; `testdata/marketplace` is a one-plugin corpus that is
+internally consistent BY CONSTRUCTION; `testdata/site` seeds the hand-authored pages the
+generated landing links to, and the fixture writes the `astro.config.mjs` the sidebar gate
+reads. The fetch seams — the repoResolver pair, `download` (`refs.DownloadRepo`) and
+`latestTag` (`refs.GitLatestTag`) — are INJECTABLE into `assembleCatalog`, so the
+assembly itself runs on fixtures without any network.
+
+Bare-clone tests use fixtures so they perform zero network fetches: the
+`repoResolver` pair, `download` (`refs.DownloadRepo`) and `latestTag`
+(`refs.GitLatestTag`) are injectable, and the fixture tree carries the minimal
+project, corpus and `astro.config.mjs` the passes read. A test that fetched the
+real corpus would instead depend on whatever the pinned marketplace checkout
+happens to hold, so the fixtures pin the input. The `CHARLY_DOCS_MARKETPLACE`
+environment override wins over the fixture corpus when set — the seam the RDD bed uses to
+pass a freshly regenerated corpus. The ONE deliberate network test is
+`TestCollectEntitiesRemote_ResolvesMovedCandy`, which fetches the real `layer-ripgrep`
+pilot repo at its newest tag to prove the actual `refs.DownloadRepo` fetch path (the
+Phase-3 R10 gate) — a single test, not the wiring suite.
+
+## Cross-References
+
+- `/charly-tools:docs-site` — the candy + `check-docs` bed that builds and proves the site.
+- `/charly-internals:plugin` — placement, the provider model, the CUE-schema contract.
+- `/charly-internals:skills` — the skill corpus this site publishes.
+
+## When to Use This Skill
+
+Invoke before running or modifying `charly docs`, editing `candy/plugin-docs`, touching the
+generated trees in the opencharly/docs repo, or changing anything the generator reads (a candy's
+`description:`, a plugin's `providers:` or CUE schema, a skill's frontmatter or cross-references).
