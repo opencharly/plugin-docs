@@ -45,3 +45,16 @@ plugin-docs:
               context:
                 - build
               command: "true"
+
+# The `docs` skill, authored beside the command it documents.
+# ROUTING-ONLY: name/family/owner plus the `triggers:` that generate its DISPATCHER.md
+# row — the prose is `.agents/skills/docs/SKILL.md` at this repo's root, never an inline
+# `description:`/`content:` (an inline body that disagrees with its file is a hard error in
+# the marketplace generator).
+docs-skill:
+    skill:
+        name: docs
+        family: build
+        owner: plugin-docs
+        triggers:
+            - "`charly docs` / the opencharly.ai site / the opencharly/docs repo / Starlight/Astro / `candy/plugin-docs` (runtime plugin) or `candy/docs-site`"
