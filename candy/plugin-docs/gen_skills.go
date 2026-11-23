@@ -61,9 +61,9 @@ func collectCandySkills(ents []candywalk.Entity, retired map[string]bool) ([]ski
 		// corpus read (`collectSkills`) resolves that through candywalk.ReadSkillFile; this
 		// complement read only the inline `content:`, so a moved candy whose body had migrated
 		// projected a BLANK card (opencharly/plugin-docs#28 — the module's own test was red for
-		// it, unchanged, on the released tag). Resolve the file the same way and reconcile the
-		// two forms with the SAME rules the marketplace generator applies (fillSkillFromFile):
-		// a disagreement is loud, never a silent pick.
+		// it, unchanged, on the released tag). The file FILLS A MISSING body; it never
+		// overrides or reconciles an inline one, because refusing a disagreement is the
+		// authority's check (the marketplace generator's fillSkillFromFile), not a fallback's.
 		content, description := s.Content, s.Description
 		var fileRefs []skillReference
 		if e.SourceRoot != "" {
