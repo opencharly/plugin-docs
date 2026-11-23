@@ -24,10 +24,16 @@ import (
 // The projection mirrors plugin-marketplace's emit_skills.go: each candy `skill:` entity
 // (e.Name, family from spec.Skill.Family, content from spec.Skill.Content) becomes one skill
 // card under its family's plugin dir.
-func collectCandySkills(ents []candywalk.Entity) ([]skill, error) {
+func collectCandySkills(ents []candywalk.Entity, retired map[string]bool) ([]skill, error) {
 	var out []skill
 	for _, e := range ents {
 		if e.Kind != "skill" {
+			continue
+		}
+		// A repo the corpus has RETIRED contributes nothing (plugin-docs#27): the corpus is
+		// authoritative for what it publishes, and a retired skill is absent from it by
+		// definition, so this complement would otherwise always win it back.
+		if isRetiredEntity(e, retired) {
 			continue
 		}
 		var s spec.Skill
