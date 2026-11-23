@@ -75,6 +75,12 @@ func generate(root, out, pluginsDir, narrativeDir string) error {
 	if err != nil {
 		return err
 	}
+	// The corpus's retirement list is read from the SAME checkout: a retired repo's entities
+	// are never contributed by the candy walk (plugin-docs#27).
+	retired, err := loadRetired(pluginsDir)
+	if err != nil {
+		return err
+	}
 	skills, err := collectSkills(pluginsDir, market)
 	if err != nil {
 		return err
@@ -93,7 +99,7 @@ func generate(root, out, pluginsDir, narrativeDir string) error {
 	// (2–3 bullets for one card). The corpus is authoritative for a skill it already carries
 	// (it is the published projection); the walk only contributes skills the corpus lacks (a
 	// moved candy whose regeneration has not landed), which is exactly its stated purpose.
-	candySkills, err := collectCandySkills(rawEnts)
+	candySkills, err := collectCandySkills(rawEnts, retired)
 	if err != nil {
 		// Loud, not silent (plugin-docs#18): a candy `skill:` entity that fails to decode means the
 		// complement is incomplete, and an incomplete complement is what let a 215-file pin lag go
