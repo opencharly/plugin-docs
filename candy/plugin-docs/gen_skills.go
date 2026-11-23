@@ -56,17 +56,61 @@ func collectCandySkills(ents []candywalk.Entity, retired map[string]bool) ([]ski
 		if name == "" {
 			name = e.Name
 		}
-		refs := make([]skillReference, 0, len(s.References))
+		// A skill's body may live in the repository FILE its owning candy declares
+		// (`<repo>/.agents/skills/<name>/SKILL.md`) while the node keeps only routing. The
+		// corpus read (`collectSkills`) resolves that through candywalk.ReadSkillFile; this
+		// complement read only the inline `content:`, so a moved candy whose body had migrated
+		// projected a BLANK card (opencharly/plugin-docs#28 — the module's own test was red for
+		// it, unchanged, on the released tag). Resolve the file the same way and reconcile the
+		// two forms with the SAME rules the marketplace generator applies (fillSkillFromFile):
+		// a disagreement is loud, never a silent pick.
+		content, description := s.Content, s.Description
+		var fileRefs []skillReference
+		if e.SourceRoot != "" {
+			treeDir := filepath.Join(e.SourceRoot, candywalk.AgentsSkillsDir)
+			sf, err := candywalk.ReadSkillFile(treeDir, name)
+			if err != nil {
+				return nil, fmt.Errorf("candy skill %q (%s): read %s: %w", e.Name, e.Dir, filepath.Join(treeDir, name, "SKILL.md"), err)
+			}
+			if sf != nil && content == "" {
+				// The file fills a MISSING body. When the node carries its own inline body it
+				// stays the source: reconciling the two forms (and refusing a disagreement) is
+				// the AUTHORITY's check — the marketplace generator's fillSkillFromFile — not
+				// this fallback's, and enforcing it here failed the live tree on description
+				// drift alone (measured: `cuda-skill` in the charly root manifest).
+				content = sf.Content
+				if description == "" {
+					description = sf.Description
+				}
+				for _, r := range sf.References {
+					fileRefs = append(fileRefs, skillReference{Stem: r.Stem, Body: r.Content})
+				}
+			}
+		}
+		if content == "" {
+			// Neither source has a body. This complement is a FALLBACK — the corpus is the
+			// authority for what it publishes — so a routing-only node is SKIPPED, visibly,
+			// rather than failing the site build: the corpus may carry the real body under the
+			// same (family, name) and this entity would only duplicate it blank. (The
+			// marketplace generator hard-errors on the same shape because THERE it is the
+			// authority; measured on the live tree: `arch-aur-test-skill` in `box/arch`.)
+			fmt.Fprintf(os.Stderr, "charly docs: skipping candy skill %q (%s): no body — neither an inline `content:` nor %s\n", e.Name, e.Dir, filepath.Join(candywalk.AgentsSkillsDir, name, "SKILL.md"))
+			continue
+		}
+		refs := make([]skillReference, 0, len(s.References)+len(fileRefs))
 		for _, r := range s.References {
 			refs = append(refs, skillReference{Stem: r.Name, Body: r.Content})
+		}
+		if len(refs) == 0 {
+			refs = fileRefs
 		}
 		out = append(out, skill{
 			PluginDir:   s.Family,
 			PluginName:  "charly-" + s.Family,
 			Name:        name,
 			Title:       name,
-			Description: s.Description,
-			Body:        s.Content,
+			Description: description,
+			Body:        content,
 			References:  refs,
 		})
 	}
