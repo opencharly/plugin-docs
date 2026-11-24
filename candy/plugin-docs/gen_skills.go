@@ -24,7 +24,7 @@ import (
 // The projection mirrors plugin-marketplace's emit_skills.go: each candy `skill:` entity
 // (e.Name, family from spec.Skill.Family, content from spec.Skill.Content) becomes one skill
 // card under its family's plugin dir.
-func collectCandySkills(ents []candywalk.Entity, retired map[string]bool) ([]skill, error) {
+func collectCandySkills(ents []candywalk.Entity, retired retiredSet) ([]skill, error) {
 	var out []skill
 	for _, e := range ents {
 		if e.Kind != "skill" {
@@ -33,7 +33,7 @@ func collectCandySkills(ents []candywalk.Entity, retired map[string]bool) ([]ski
 		// A repo the corpus has RETIRED contributes nothing (plugin-docs#27): the corpus is
 		// authoritative for what it publishes, and a retired skill is absent from it by
 		// definition, so this complement would otherwise always win it back.
-		if isRetiredEntity(e, retired) {
+		if isRetiredEntity(e, retired.repos) {
 			continue
 		}
 		var s spec.Skill
@@ -55,6 +55,11 @@ func collectCandySkills(ents []candywalk.Entity, retired map[string]bool) ([]ski
 		name := s.Name
 		if name == "" {
 			name = e.Name
+		}
+		// A retired CARD is skipped wherever it comes from (opencharly/plugin-marketplace#64):
+		// the thing it describes is consolidated or gone, and no stale edge may bring it back.
+		if retired.skillRetired(s.Family, name) {
+			continue
 		}
 		// A skill's body may live in the repository FILE its owning candy declares
 		// (`<repo>/.agents/skills/<name>/SKILL.md`) while the node keeps only routing. The

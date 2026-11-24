@@ -34,7 +34,7 @@ func TestCollectCandySkills_ProjectsMovedCandySkill(t *testing.T) {
 	if err != nil {
 		t.Fatalf("walkRemote: %v", err)
 	}
-	skills, err := collectCandySkills(ents, nil)
+	skills, err := collectCandySkills(ents, retiredSet{})
 	if err != nil {
 		t.Fatalf("collectCandySkills: %v", err)
 	}

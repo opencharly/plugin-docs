@@ -67,7 +67,7 @@ func TestCollectCandySkills_SkipsBodilessNodeVisibly(t *testing.T) {
 		t.Fatal(err)
 	}
 	os.Stderr = w
-	got, cerr := collectCandySkills(ents, nil)
+	got, cerr := collectCandySkills(ents, retiredSet{})
 	_ = w.Close()
 	os.Stderr = old
 	captured, _ := io.ReadAll(r)
@@ -98,7 +98,7 @@ func TestCollectCandySkills_SkipsBodilessNodeVisibly(t *testing.T) {
 func TestCollectCandySkills_FileBodyAndReferences(t *testing.T) {
 	repo := t.TempDir()
 	writeSkillFile(t, repo, "filed", "Body from the file.", true)
-	got, err := collectCandySkills([]candywalk.Entity{entityNode(t, "filed", repo, "")}, nil)
+	got, err := collectCandySkills([]candywalk.Entity{entityNode(t, "filed", repo, "")}, retiredSet{})
 	if err != nil {
 		t.Fatalf("collectCandySkills: %v", err)
 	}

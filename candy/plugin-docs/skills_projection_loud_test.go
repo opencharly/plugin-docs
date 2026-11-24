@@ -42,7 +42,7 @@ func TestCollectCandySkills_FailsLoudlyOnADecodeError(t *testing.T) {
 		t.Fatalf("walkRemote: %v", err)
 	}
 
-	out, err := collectCandySkills(ents, nil)
+	out, err := collectCandySkills(ents, retiredSet{})
 	if err == nil {
 		t.Fatalf("a candy skill entity that cannot decode was dropped silently (got %d skills, no error) — "+
 			"the complement would omit it and every page would still build: that is plugin-docs#18", len(out))
