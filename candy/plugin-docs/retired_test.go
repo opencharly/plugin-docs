@@ -33,7 +33,7 @@ func TestCollectCandySkills_SkipsRetiredRepo(t *testing.T) {
 		// A LOCAL entity (the generator's own tree) is never retired by a repo list.
 		ent("local-skill", ""),
 	}
-	got, err := collectCandySkills(ents, retired)
+	got, err := collectCandySkills(ents, retiredSet{repos: retired})
 	if err != nil {
 		t.Fatalf("collectCandySkills: %v", err)
 	}
@@ -53,22 +53,34 @@ func TestCollectCandySkills_SkipsRetiredRepo(t *testing.T) {
 }
 
 // TestParseRetired pins the retirement list's shape and its strictness — a typo must fail the
-// generation, never quietly retire nothing.
+// generation, never quietly retire nothing. Both lists are covered: REPOS and SKILL CARDS.
 func TestParseRetired(t *testing.T) {
 	cases := []struct {
-		name    string
-		src     string
-		want    string
-		wantErr string
+		name       string
+		src        string
+		wantRepos  string
+		wantSkills string
+		wantErr    string
 	}{
-		{name: "valid, @ form accepted", src: "retired: [\"github.com/opencharly/a\", \"@github.com/opencharly/b\"]", want: "github.com/opencharly/a,github.com/opencharly/b"},
+		{
+			name:      "valid repos, @ form accepted",
+			src:       "retired: [\"github.com/opencharly/a\", \"@github.com/opencharly/b\"]",
+			wantRepos: "github.com/opencharly/a,github.com/opencharly/b",
+		},
+		{
+			name:       "valid skill cards",
+			src:        "retired: []\nretired_skills: [\"openclaw/openclaw-desktop\", \"automation/herdr\"]",
+			wantSkills: "openclaw/openclaw-desktop,automation/herdr",
+		},
 		{name: "empty list", src: "retired: []"},
 		{name: "unknown field is closed", src: "retired: []\nretierd: []\n", wantErr: "field not allowed"},
 		{name: "unqualified path", src: "retired: [\"pod-immich-ml\"]", wantErr: "not a fully qualified repo path"},
+		{name: "a card needs family/name", src: "retired: []\nretired_skills: [\"herdr\"]", wantErr: "is not <family>/<name>"},
+		{name: "a card has exactly two segments", src: "retired: []\nretired_skills: [\"a/b/c\"]", wantErr: "is not <family>/<name>"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := parseRetired([]byte(tc.src))
+			repos, skills, err := parseRetired([]byte(tc.src))
 			if tc.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 					t.Fatalf("err = %v, want it to contain %q", err, tc.wantErr)
@@ -78,10 +90,50 @@ func TestParseRetired(t *testing.T) {
 			if err != nil {
 				t.Fatalf("parseRetired: %v", err)
 			}
-			if strings.Join(got, ",") != tc.want {
-				t.Fatalf("retired = %v, want %q", got, tc.want)
+			if strings.Join(repos, ",") != tc.wantRepos {
+				t.Fatalf("repos = %v, want %q", repos, tc.wantRepos)
+			}
+			if strings.Join(skills, ",") != tc.wantSkills {
+				t.Fatalf("skills = %v, want %q", skills, tc.wantSkills)
 			}
 		})
+	}
+}
+
+// TestCollectCandySkills_SkipsRetiredCard: a card named in `retired_skills` is never contributed,
+// whatever tree carries it, while a live sibling is — the control opencharly/plugin-marketplace#64
+// named, honoured here too because the docs complement reads the same file.
+//
+// FAILS WITHOUT THE CHANGE: the complement skipped only retired REPOS, so a retired card came
+// back from any stale edge.
+func TestCollectCandySkills_SkipsRetiredCard(t *testing.T) {
+	ent := func(name, family string) candywalk.Entity {
+		var doc yaml.Node
+		body := "name: " + name + "\nfamily: " + family + "\ncontent: |-\n  Body of " + name + ".\n"
+		if err := yaml.Unmarshal([]byte(body), &doc); err != nil {
+			t.Fatalf("fixture %s: %v", name, err)
+		}
+		return candywalk.Entity{Name: name, Kind: "skill", Dir: "candy/fixture", Value: *doc.Content[0]}
+	}
+	retired := retiredSet{repos: map[string]bool{}, skills: map[string]bool{"openclaw/openclaw-desktop": true}}
+	ents := []candywalk.Entity{
+		ent("openclaw-desktop", "openclaw"),
+		ent("openclaw", "openclaw"),
+	}
+	got, err := collectCandySkills(ents, retired)
+	if err != nil {
+		t.Fatalf("collectCandySkills: %v", err)
+	}
+	var names []string
+	for _, s := range got {
+		names = append(names, s.Name)
+	}
+	joined := strings.Join(names, ",")
+	if strings.Contains(joined, "openclaw-desktop") {
+		t.Fatalf("a retired card was projected: %v", names)
+	}
+	if !strings.Contains(joined, "openclaw") {
+		t.Fatalf("the live sibling was dropped: %v", names)
 	}
 }
 
@@ -90,8 +142,8 @@ func TestParseRetired(t *testing.T) {
 func TestLoadRetired_AbsentIsEmptyAndMalformedIsFatal(t *testing.T) {
 	dir := t.TempDir()
 	got, err := loadRetired(dir)
-	if err != nil || len(got) != 0 {
-		t.Fatalf("loadRetired(absent) = %v, %v; want empty, nil", got, err)
+	if err != nil || len(got.repos) != 0 || len(got.skills) != 0 {
+		t.Fatalf("loadRetired(absent) = %+v, %v; want empty, nil", got, err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, retiredFileName), []byte("retired: [\n"), 0o644); err != nil {
 		t.Fatal(err)

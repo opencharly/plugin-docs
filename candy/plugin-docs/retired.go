@@ -39,67 +39,93 @@ const retiredFileName = "retired.cue"
 const retiredSchema = `
 #Retired: {
 	retired: [...string]
+	retired_skills?: [...string]
 }
 `
+
+// retiredSet is what the corpus has retired: whole REPOS, and individual SKILL cards. The card
+// half exists because a stale card does not always come with a retired repo — the thing it
+// describes can be consolidated or removed while its owner lives on, and its node then survives
+// only in the owner's old tags (opencharly/plugin-marketplace#64).
+type retiredSet struct {
+	repos  map[string]bool
+	skills map[string]bool // "<family>/<name>"
+}
+
+// skillRetired reports whether a skill card's (family, name) is retired.
+func (r retiredSet) skillRetired(family, name string) bool {
+	return r.skills[family+"/"+name]
+}
 
 // loadRetired reads the corpus's retirement list from its root. A corpus that has retired nothing
 // carries no file, and that is a no-op — every corpus had that shape before the list existed.
 // Every OTHER problem is fatal: a malformed list must never degrade to "nothing retired".
-func loadRetired(pluginsDir string) (map[string]bool, error) {
+func loadRetired(pluginsDir string) (retiredSet, error) {
 	path := filepath.Join(pluginsDir, retiredFileName)
 	raw, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
-		return map[string]bool{}, nil
+		return retiredSet{repos: map[string]bool{}, skills: map[string]bool{}}, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", retiredFileName, err)
+		return retiredSet{}, fmt.Errorf("read %s: %w", retiredFileName, err)
 	}
-	paths, err := parseRetired(raw)
+	repos, skills, err := parseRetired(raw)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", retiredFileName, err)
+		return retiredSet{}, fmt.Errorf("%s: %w", retiredFileName, err)
 	}
-	out := make(map[string]bool, len(paths))
-	for _, p := range paths {
-		out[p] = true
+	out := retiredSet{repos: make(map[string]bool, len(repos)), skills: make(map[string]bool, len(skills))}
+	for _, p := range repos {
+		out.repos[p] = true
+	}
+	for _, p := range skills {
+		out.skills[p] = true
 	}
 	return out, nil
 }
 
 // parseRetired validates one retirement list against the closed shape and returns its repo paths
 // in the form the walk's export dirs carry (`github.com/opencharly/<repo>`).
-func parseRetired(raw []byte) ([]string, error) {
+func parseRetired(raw []byte) (repos, skills []string, err error) {
 	ctx := cuecontext.New()
 	schema := ctx.CompileString(retiredSchema)
 	if err := schema.Err(); err != nil {
-		return nil, fmt.Errorf("compile the retirement schema: %w", err)
+		return nil, nil, fmt.Errorf("compile the retirement schema: %w", err)
 	}
 	def := schema.LookupPath(cue.ParsePath("#Retired"))
 	if !def.Exists() {
-		return nil, errors.New("the retirement schema declares no #Retired")
+		return nil, nil, errors.New("the retirement schema declares no #Retired")
 	}
 	data := ctx.CompileBytes(raw)
 	if err := data.Err(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	unified := data.Unify(def)
 	if err := unified.Validate(); err != nil {
-		return nil, fmt.Errorf("does not match #Retired: %w", err)
+		return nil, nil, fmt.Errorf("does not match #Retired: %w", err)
 	}
 	var doc struct {
-		Retired []string
+		Retired       []string `json:"retired"`
+		RetiredSkills []string `json:"retired_skills"`
 	}
 	if err := unified.Decode(&doc); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	out := make([]string, 0, len(doc.Retired))
 	for _, p := range doc.Retired {
 		repoPath := strings.TrimPrefix(strings.TrimSpace(p), "@")
 		if !strings.HasPrefix(repoPath, "github.com/") {
-			return nil, fmt.Errorf("retired entry %q is not a fully qualified repo path (want e.g. \"github.com/opencharly/pod-immich-ml\")", p)
+			return nil, nil, fmt.Errorf("retired entry %q is not a fully qualified repo path (want e.g. \"github.com/opencharly/pod-immich-ml\")", p)
 		}
-		out = append(out, repoPath)
+		repos = append(repos, repoPath)
 	}
-	return out, nil
+	for _, p := range doc.RetiredSkills {
+		key := strings.TrimSpace(p)
+		family, name, ok := strings.Cut(key, "/")
+		if !ok || family == "" || name == "" || strings.Contains(name, "/") {
+			return nil, nil, fmt.Errorf("retired skill entry %q is not <family>/<name>", p)
+		}
+		skills = append(skills, key)
+	}
+	return repos, skills, nil
 }
 
 // isRetiredEntity reports whether a walked entity came from a repo the corpus has retired.
